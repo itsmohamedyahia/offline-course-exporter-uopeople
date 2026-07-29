@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UoPeople Course Exporter</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-badge">UoP</div>
+        <div class="brand-text">
+          <h1>Course Exporter</h1>
+          <span class="subtext">Brightspace Offline Package</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-body">
+      <!-- Course Detector Box -->
+      <div class="card course-card" id="course-card">
+        <div class="status-indicator searching" id="status-badge">Detecting...</div>
+        <h2 id="course-title">Checking active Brightspace tab...</h2>
+        <p class="course-meta" id="course-meta">Navigate to any UoPeople course page</p>
+      </div>
+
+      <!-- Settings / Options -->
+      <div class="options-group">
+        <label class="toggle-option">
+          <input type="checkbox" id="opt-download-assets" checked>
+          <span class="toggle-slider"></span>
+          <span class="toggle-label">
+            <strong>Download Attachments & PDFs</strong>
+            <small>Saves PDFs to an <code>assets/</code> subfolder linked inside the HTML site</small>
+          </span>
+        </label>
+      </div>
+
+      <!-- Progress Section -->
+      <div class="progress-section hidden" id="progress-section">
+        <div class="progress-header">
+          <span id="progress-label">Extracting course data...</span>
+          <span id="progress-percent">0%</span>
+        </div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progress-fill"></div>
+        </div>
+        <p class="progress-status" id="progress-detail">Initializing Brightspace Valence API...</p>
+      </div>
+
+      <!-- Primary Actions -->
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-export" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Export Course Website
+        </button>
+      </div>
+
+      <div class="result-message hidden" id="result-message">
+        <div class="success-banner">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <span>Course Export Complete! Check your downloads folder.</span>
+        </div>
+      </div>
+    </main>
+
+    <footer class="app-footer">
+      <span>Works on any Brightspace UoPeople page</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
