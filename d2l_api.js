@@ -4,7 +4,9 @@
 const D2LApi = {
   async getCourseInfo(orgUnitId) {
     try {
-      const resp = await fetch(`/d2l/api/lp/1.30/courses/${orgUnitId}`);
+      const resp = await fetch(`/d2l/api/lp/1.30/courses/${orgUnitId}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
       if (resp.ok) {
         const data = await resp.json();
         return {
@@ -33,7 +35,9 @@ const D2LApi = {
     for (const ver of apiVersions) {
       try {
         const url = `/d2l/api/le/${ver}/${orgUnitId}/content/toc`;
-        const resp = await fetch(url);
+        const resp = await fetch(url, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
         if (resp.ok) {
           const data = await resp.json();
           console.log(`Successfully fetched TOC using LE API v${ver}`);
@@ -102,7 +106,11 @@ const D2LApi = {
     try {
       const targetUrl = this.toAbsoluteUrl(url);
 
-      if (this.isAssetUrl(targetUrl) && (targetUrl.toLowerCase().endsWith('.pdf') || targetUrl.toLowerCase().endsWith('.docx') || targetUrl.toLowerCase().endsWith('.zip'))) {
+      // If the URL clearly points to a downloadable file, don't fetch it here.
+      // Just record it as an attachment — the background worker will download it later.
+      const lowerUrl = targetUrl.toLowerCase();
+      const isBinaryAsset = /\.(pdf|docx?|pptx?|xlsx?|zip|rar|rtf|odt|csv)(\?|#|$)/i.test(lowerUrl);
+      if (isBinaryAsset) {
         const cleanFileName = this.sanitizeFileName(targetUrl);
         discoveredAttachments.push({
           title: cleanFileName.replace(/\.[^/.]+$/, ''),
@@ -113,7 +121,9 @@ const D2LApi = {
         return `<p><a href="assets/${cleanFileName}" target="_blank" class="attachment-btn">📄 Open Document (${cleanFileName})</a></p>`;
       }
 
-      const resp = await fetch(targetUrl);
+      const resp = await fetch(targetUrl, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
       if (!resp.ok) return '';
 
       const contentType = resp.headers.get('content-type') || '';
