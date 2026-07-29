@@ -62,6 +62,26 @@ const D2LApi = {
     }
   },
 
+  cleanHtml(htmlStr) {
+    if (!htmlStr) return '';
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlStr, 'text/html');
+      let changed = false;
+      doc.querySelectorAll('img').forEach(img => {
+        const src = img.getAttribute('src') || '';
+        if (src.toLowerCase().includes('logo_shield.png')) {
+          img.remove();
+          changed = true;
+        }
+      });
+      return changed ? doc.body.innerHTML : htmlStr;
+    } catch (e) {
+      console.warn('Failed to clean HTML via DOMParser:', e);
+      return htmlStr.replace(/<img[^>]*logo_shield[^>]*>/gi, '');
+    }
+  },
+
   sanitizeFileName(fileName) {
     if (!fileName) return 'attachment.pdf';
     try {
@@ -196,8 +216,13 @@ const D2LApi = {
 
         container.querySelectorAll('img[src]').forEach(img => {
           const src = img.getAttribute('src');
-          if (src && !src.startsWith('http') && !src.startsWith('data:')) {
-            img.setAttribute('src', this.toAbsoluteUrl(src, targetUrl));
+          if (src) {
+            const absUrl = this.toAbsoluteUrl(src, targetUrl);
+            if (src.toLowerCase().includes('logo_shield.png') || absUrl.toLowerCase().includes('logo_shield.png')) {
+              img.remove();
+            } else if (!src.startsWith('http') && !src.startsWith('data:')) {
+              img.setAttribute('src', absUrl);
+            }
           }
         });
 
@@ -226,7 +251,7 @@ const D2LApi = {
       const unitObj = {
         id: module.ModuleId,
         title: title,
-        description: module.Description ? (module.Description.Html || module.Description.Text || '') : '',
+        description: module.Description ? this.cleanHtml(module.Description.Html || module.Description.Text || '') : '',
         topics: [],
         readings: [],
         discussions: [],
