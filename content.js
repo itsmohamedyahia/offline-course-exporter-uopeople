@@ -95,6 +95,8 @@
       });
 
       // Fetch attachment files & embedded PDFs if enabled
+      // Downloads are routed through the background service worker
+      // to bypass download manager interception (IDM, etc.)
       if (downloadAssets) {
         const downloadedUrls = new Set();
 
@@ -104,15 +106,30 @@
               if (att.url && !downloadedUrls.has(att.url)) {
                 downloadedUrls.add(att.url);
                 try {
-                  const resp = await fetch(att.url);
-                  if (resp.ok) {
-                    const blobData = await resp.arrayBuffer();
-                    const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
+                  // Fetch via background service worker to bypass IDM
+                  const result = await new Promise((resolve) => {
+                    chrome.runtime.sendMessage(
+                      { action: 'FETCH_FILE', url: att.url },
+                      (response) => resolve(response)
+                    );
+                  });
 
+                  if (result && result.success && result.base64) {
+                    // Decode base64 back to Uint8Array
+                    const binaryStr = atob(result.base64);
+                    const bytes = new Uint8Array(binaryStr.length);
+                    for (let i = 0; i < binaryStr.length; i++) {
+                      bytes[i] = binaryStr.charCodeAt(i);
+                    }
+
+                    const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
                     zipFiles.push({
                       name: `assets/${cleanFileName}`,
-                      content: new Uint8Array(blobData)
+                      content: bytes
                     });
+                    console.log(`Packed asset: assets/${cleanFileName} (${bytes.length} bytes)`);
+                  } else {
+                    console.warn(`Background fetch failed for ${att.url}:`, result?.error);
                   }
                 } catch (e) {
                   console.warn(`Could not download attachment ${att.url}:`, e);
