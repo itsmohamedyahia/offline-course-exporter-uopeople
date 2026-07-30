@@ -12,7 +12,7 @@ A Manifest V3 browser extension designed for University of the People students t
   - Unit-by-Unit Overviews (Unit 1 to Unit 8)
   - Reading Assignments
   - Discussion Forum Prompts
-  - Written Assignments & Learning Journals
+  - Written Assignments
   - Graded Quiz / Assessment Mentions
 - 📁 **Attachment Offloading**: Downloads PDFs and attachments into a dedicated `assets/` subfolder, linked directly within the offline HTML site.
 - 🎨 **Modern Interactive UI**:

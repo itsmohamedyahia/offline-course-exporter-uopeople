@@ -17,6 +17,49 @@ const HTMLBuilder = {
 
     const unitsJson = JSON.stringify(units).replace(/</g, '\\u003c');
 
+    const cleanContentHtmlJS = `
+    function cleanContentHtml(html, title = '') {
+      if (!html) return '';
+      let clean = html;
+
+      // 1. Remove duplicate logo footers and copyright footers
+      clean = clean.replace(/<footer[^>]* class="mceNonEditable"[^>]*>[\\s\\S]*?<\\/footer>/gi, '');
+      clean = clean.replace(/<p>\\s*<img[^>]*LogoMinimal_Purple\\.png[^>]*>\\s*<\\/p>/gi, '');
+      clean = clean.replace(/<img[^>]*LogoMinimal_Purple\\.png[^>]*>/gi, '');
+
+      // 2. Remove duplicate hero headers and banners
+      clean = clean.replace(/<div[^>]*class="[^"]*courseware-headers-[^"]*"[^>]*>[\\s\\S]*?<\\/div>\\s*<\\/div>/gi, '');
+      
+      // Remove duplicate title headers if they match the topic title
+      if (title) {
+        const escapedTitle = title.replace(/[-\\/\\\\^$*+?.()|[\\\]{}]/g, '\\\\$&');
+        const hRegex = new RegExp('<(h1|h2|h3)[^>]*>\\\\s*(?:<span[^>]*>\\\\s*)*' + escapedTitle + '\\\\s*(?:<\\\\/span>\\\\s*)*<\\\\/\\\\1>', 'i');
+        clean = clean.replace(hRegex, '');
+      }
+
+      // 3. Remove LockDown Browser scaffolding & forms (keep inside content)
+      clean = clean.replace(/<iframe id="LockDownBrowserLaunchFrame"[\\s\\S]*?<\\/iframe>/gi, '');
+      clean = clean.replace(/<input[^>]*type="hidden"[^>]*>/gi, '');
+      clean = clean.replace(/<button[^>]*id="z_a"[^>]*>[\\s\\S]*?<\\/button>/gi, '');
+      clean = clean.replace(/<d2l-floating-buttons[\\s\\S]*?<\\/d2l-floating-buttons>/gi, '');
+      clean = clean.replace(/<form[^>]*id="d2l_form"[^>]*>/gi, '');
+      clean = clean.replace(/<\\/form>/gi, '');
+      
+      // 6. Strip inline font-sizes style="font-size: ..."
+      clean = clean.replace(/style="[^"]*font-size:\\s*[^";]+;?[^"]*"/gi, (match) => {
+        let style = match.replace(/font-size:\\s*[^";]+;?/gi, '');
+        if (style === 'style=""') return '';
+        return style;
+      });
+
+      // Clean up empty paragraphs/spans left over
+      clean = clean.replace(/<p>\\s*<\\/p>/gi, '');
+      clean = clean.replace(/<span[^>]*>\\s*<\\/span>/gi, '');
+
+      return clean;
+    }
+    `;
+
     const htmlContent = `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -244,6 +287,90 @@ const HTMLBuilder = {
       color: var(--accent);
       text-decoration: underline;
     }
+    .topic-body p {
+      margin-bottom: 16px;
+    }
+    .topic-body h1, .topic-body h2, .topic-body h3, .topic-body h4 {
+      margin-top: 24px;
+      margin-bottom: 12px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .topic-body h1 { font-size: 1.4em; }
+    .topic-body h2 { font-size: 1.25em; }
+    .topic-body h3 { font-size: 1.1em; }
+    .topic-body h4 { font-size: 1.0em; }
+    .topic-body ul, .topic-body ol {
+      margin-bottom: 16px;
+      padding-left: 24px;
+    }
+    .topic-body li {
+      margin-bottom: 8px;
+    }
+    .topic-body img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      margin: 16px 0;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+    .topic-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 13.5px;
+    }
+    .topic-body th, .topic-body td {
+      border: 1px solid var(--border-color);
+      padding: 10px 12px;
+      text-align: left;
+    }
+    .topic-body th {
+      background-color: var(--bg-card-hover);
+      font-weight: 600;
+    }
+    .topic-body blockquote {
+      border-left: 4px solid var(--accent);
+      padding: 8px 16px;
+      margin: 16px 0;
+      background-color: var(--bg-card-hover);
+      color: var(--text-muted);
+      border-radius: 0 8px 8px 0;
+    }
+    .video-container {
+      margin: 16px 0;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .video-container iframe {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border: 0;
+      border-radius: 6px;
+      display: block;
+    }
+    .watch-on-youtube-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background-color: #ff0000;
+      color: #ffffff !important;
+      padding: 8px 16px;
+      border-radius: 6px;
+      text-decoration: none !important;
+      font-weight: 600;
+      font-size: 13px;
+      transition: background-color 0.2s, transform 0.1s;
+    }
+    .watch-on-youtube-btn:hover {
+      background-color: #cc0000;
+      transform: scale(1.02);
+    }
+    .watch-on-youtube-btn:active {
+      transform: scale(0.98);
+    }
 
     .attachment-list {
       display: flex;
@@ -270,12 +397,84 @@ const HTMLBuilder = {
     }
 
     .quiz-notice {
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.3);
+      background: rgba(239, 68, 68, 0.05);
+      border: 1px solid rgba(239, 68, 68, 0.2);
       padding: 14px 18px;
       border-radius: 8px;
       color: var(--text-main);
       font-size: 13px;
+    }
+
+    .quiz-details-accordion {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 12px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .quiz-details-accordion[open] {
+      border-color: var(--accent) !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+
+    .quiz-summary {
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+      outline: none;
+      list-style: none;
+    }
+
+    .quiz-summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .view-questions-badge {
+      background: var(--bg-card-hover);
+      border: 1px solid var(--border-color);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+
+    .quiz-details-accordion[open] .view-questions-badge {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .offline-quiz-question {
+      margin-bottom: 24px;
+      padding: 20px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background-color: var(--bg-card);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .offline-quiz-question input[type="radio"],
+    .offline-quiz-question input[type="checkbox"] {
+      cursor: not-allowed !important;
+      accent-color: var(--accent) !important;
+      opacity: 0.85;
+      width: 14px;
+      height: 14px;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    .offline-quiz-question label {
+      cursor: not-allowed !important;
+      vertical-align: middle;
     }
 
     @media print {
@@ -313,6 +512,8 @@ const HTMLBuilder = {
     const units = ${unitsJson};
     let activeUnitIndex = 0;
 
+    ${cleanContentHtmlJS}
+
     function renderNav(filteredUnits = units) {
       const navContainer = document.getElementById('unit-nav');
       navContainer.innerHTML = '';
@@ -321,7 +522,6 @@ const HTMLBuilder = {
         item.className = 'unit-nav-item' + (units.indexOf(unit) === activeUnitIndex ? ' active' : '');
         item.innerHTML = \`
           <span>\${escapeHtml(unit.title)}</span>
-          <small>\${unit.topics ? unit.topics.length : 0} items</small>
         \`;
         item.onclick = () => {
           activeUnitIndex = units.indexOf(unit);
@@ -347,15 +547,25 @@ const HTMLBuilder = {
         </header>
       \`;
 
-      // Filter general topics (Overview, Syllabus, Welcome, Conclusions, etc.)
+      // Filter general topics (Overview, Syllabus, Welcome, etc. but excluding major sections, quizzes and conclusions)
       const generalTopics = (unit.topics || []).filter(t => {
         const title = t.title.toLowerCase();
-        return !title.includes('reading assignment') &&
+        return !title.includes('reading') &&
+               !title.includes('textbook') &&
                !title.includes('discussion') &&
-               !title.includes('written assignment') &&
+               !title.includes('forum') &&
+               !title.includes('assignment') &&
                !title.includes('learning journal') &&
                !title.includes('quiz') &&
-               !title.includes('exam');
+               !title.includes('exam') &&
+               !title.includes('test') &&
+               !title.includes('conclusion');
+      });
+
+      // Extract Conclusion topics
+      const conclusionTopics = (unit.topics || []).filter(t => {
+        const title = t.title.toLowerCase();
+        return title.includes('conclusion');
       });
 
       // Overview / General Section
@@ -370,7 +580,7 @@ const HTMLBuilder = {
               \${generalTopics.map(t => \`
                 <div class="topic-item">
                   <h3>\${escapeHtml(t.title)}</h3>
-                  \${t.contentHtml ? \`<div class="topic-body">\${t.contentHtml}</div>\` : ''}
+                  \${t.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(t.contentHtml, t.title)}</div>\` : ''}
                   \${t.url ? \`<p><a href="\${t.url}" target="_blank" rel="noopener">Open Live Brightspace Topic ↗</a></p>\` : ''}
                 </div>
               \`).join('')}
@@ -391,7 +601,7 @@ const HTMLBuilder = {
               \${unit.readings.map(r => \`
                 <div class="topic-item">
                   <h3>\${escapeHtml(r.title)}</h3>
-                  \${r.contentHtml ? \`<div class="topic-body">\${r.contentHtml}</div>\` : ''}
+                  \${r.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(r.contentHtml, r.title)}</div>\` : ''}
                   \${r.url ? \`<p><a href="\${r.url}" target="_blank" rel="noopener">Open Live Brightspace Resource ↗</a></p>\` : ''}
                 </div>
               \`).join('')}
@@ -412,7 +622,7 @@ const HTMLBuilder = {
               \${unit.discussions.map(d => \`
                 <div class="topic-item">
                   <h3>\${escapeHtml(d.title)}</h3>
-                  \${d.contentHtml ? \`<div class="topic-body">\${d.contentHtml}</div>\` : ''}
+                  \${d.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(d.contentHtml, d.title)}</div>\` : ''}
                   \${d.url ? \`<p><a href="\${d.url}" target="_blank" rel="noopener">Open Discussion Thread on Brightspace ↗</a></p>\` : ''}
                 </div>
               \`).join('')}
@@ -427,13 +637,13 @@ const HTMLBuilder = {
           <section class="section-card">
             <div class="section-card-header">
               <span class="tag tag-assignment">Assignment</span>
-              <h2>Assignment Activity & Learning Journal</h2>
+              <h2>Assignment Activity</h2>
             </div>
             <div class="topic-list">
               \${unit.assignments.map(a => \`
                 <div class="topic-item">
                   <h3>\${escapeHtml(a.title)}</h3>
-                  \${a.contentHtml ? \`<div class="topic-body">\${a.contentHtml}</div>\` : ''}
+                  \${a.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(a.contentHtml, a.title)}</div>\` : ''}
                   \${a.url ? \`<p><a href="\${a.url}" target="_blank" rel="noopener">Open Assignment Submission on Brightspace ↗</a></p>\` : ''}
                 </div>
               \`).join('')}
@@ -442,20 +652,133 @@ const HTMLBuilder = {
         \`;
       }
 
-      // Graded Quizzes Section (Mentions only)
-      if (unit.quizzes && unit.quizzes.length > 0) {
+      // Quizzes Sub-sections segmentations
+      const allQuizzes = unit.quizzes || [];
+      const knowledgeChecks = allQuizzes.filter(q => q.title.toLowerCase().includes('knowledge check'));
+      const selfQuizzes = allQuizzes.filter(q => {
+        const lower = q.title.toLowerCase();
+        return (lower.includes('self-quiz') || lower.includes('self quiz')) && !lower.includes('knowledge check');
+      });
+      const assessmentQuizzes = allQuizzes.filter(q => {
+        const lower = q.title.toLowerCase();
+        return !lower.includes('knowledge check') && !lower.includes('self-quiz') && !lower.includes('self quiz');
+      });
+
+      // Knowledge Check Section
+      if (knowledgeChecks.length > 0) {
         html += \`
           <section class="section-card">
             <div class="section-card-header">
-              <span class="tag tag-quiz">Quiz</span>
-              <h2>Graded Quiz / Assessment</h2>
+              <span class="tag tag-quiz" style="background-color: #3b82f6;">Knowledge Check</span>
+              <h2>Knowledge Check</h2>
             </div>
-            <div class="quiz-notice">
-              <strong>Notice:</strong> This unit contains the following assessment item(s):
-              <ul style="margin-top: 8px; padding-left: 20px;">
-                \${unit.quizzes.map(q => \`<li><strong>\${escapeHtml(q.title)}</strong></li>\`).join('')}
-              </ul>
-              <p style="margin-top: 8px; color: var(--text-muted); font-size: 12px;">Quiz questions are not stored offline to comply with assessment security guidelines.</p>
+            <div class="quiz-group">
+              \${knowledgeChecks.map(q => \`
+                <div class="quiz-container-item" style="margin-top: 12px;">
+                  <details class="quiz-details-accordion">
+                    <summary class="quiz-summary">
+                      <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
+                        ❓ <strong>\${escapeHtml(q.title)}</strong>
+                      </span>
+                      <span class="view-questions-badge">Show Questions &amp; Answers</span>
+                    </summary>
+                    <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                      \${q.contentHtml || \`
+                        <div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
+                          <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
+                        </div>
+                      \`}
+                    </div>
+                  </details>
+                </div>
+              \`).join('')}
+            </div>
+          </section>
+        \`;
+      }
+
+      // Self-Quiz Section
+      if (selfQuizzes.length > 0) {
+        html += \`
+          <section class="section-card">
+            <div class="section-card-header">
+              <span class="tag tag-quiz" style="background-color: #10b981;">Self-Quiz</span>
+              <h2>Self-Quiz</h2>
+            </div>
+            <div class="quiz-group">
+              \${selfQuizzes.map(q => \`
+                <div class="quiz-container-item" style="margin-top: 12px;">
+                  <details class="quiz-details-accordion">
+                    <summary class="quiz-summary">
+                      <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
+                        ❓ <strong>\${escapeHtml(q.title)}</strong>
+                      </span>
+                      <span class="view-questions-badge">Show Questions &amp; Answers</span>
+                    </summary>
+                    <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                      \${q.contentHtml || \`
+                        <div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
+                          <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
+                        </div>
+                      \`}
+                    </div>
+                  </details>
+                </div>
+              \`).join('')}
+            </div>
+          </section>
+        \`;
+      }
+
+      // Assessment Section (formerly Graded Quizzes / Assessments)
+      if (assessmentQuizzes.length > 0) {
+        html += \`
+          <section class="section-card">
+            <div class="section-card-header">
+              <span class="tag tag-quiz">Assessment</span>
+              <h2>Assessment Section</h2>
+            </div>
+            <div class="quiz-group">
+              \${assessmentQuizzes.map(q => \`
+                <div class="quiz-container-item" style="margin-top: 12px;">
+                  <details class="quiz-details-accordion">
+                    <summary class="quiz-summary">
+                      <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
+                        ❓ <strong>\${escapeHtml(q.title)}</strong>
+                      </span>
+                      <span class="view-questions-badge">Show Questions &amp; Answers</span>
+                    </summary>
+                    <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                      \${q.contentHtml || \`
+                        <div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
+                          <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
+                        </div>
+                      \`}
+                    </div>
+                  </details>
+                </div>
+              \`).join('')}
+            </div>
+          </section>
+        \`;
+      }
+
+      // Conclusion Section
+      if (conclusionTopics.length > 0) {
+        html += \`
+          <section class="section-card">
+            <div class="section-card-header">
+              <span class="tag tag-overview" style="background-color: #64748b;">Conclusion</span>
+              <h2>Conclusion</h2>
+            </div>
+            <div class="topic-list">
+              \${conclusionTopics.map(t => \`
+                <div class="topic-item">
+                  <h3>\${escapeHtml(t.title)}</h3>
+                  \${t.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(t.contentHtml, t.title)}</div>\` : ''}
+                  \${t.url ? \`<p><a href="\${t.url}" target="_blank" rel="noopener">Open Live Brightspace Topic ↗</a></p>\` : ''}
+                </div>
+              \`).join('')}
             </div>
           </section>
         \`;
@@ -480,6 +803,16 @@ const HTMLBuilder = {
       }
 
       main.innerHTML = html;
+
+      // Add event listeners for quiz toggle badges
+      main.querySelectorAll('.quiz-details-accordion').forEach(details => {
+        details.addEventListener('toggle', () => {
+          const badge = details.querySelector('.view-questions-badge');
+          if (badge) {
+            badge.textContent = details.open ? 'Hide Questions & Answers' : 'Show Questions & Answers';
+          }
+        });
+      });
     }
 
     function escapeHtml(str) {
