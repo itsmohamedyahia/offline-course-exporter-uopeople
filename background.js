@@ -48,9 +48,9 @@ async function handleFetchFile(payload, sendResponse) {
 
 async function handleZipDownload(payload, sendResponse) {
   try {
-    const { courseId, courseName, zipDataUrl } = payload;
+    const { courseId, courseName, zipDataUrl, suffix } = payload;
     const sanitizedCourseName = (courseName || `Course_${courseId}`).replace(/[^a-z0-9_-]/gi, '_');
-    const zipFileName = `UoPeople_${sanitizedCourseName}_Offline.zip`;
+    const zipFileName = `UoPeople_${sanitizedCourseName}_${suffix || 'Offline'}.zip`;
 
     // Triggers a SINGLE download prompt for the entire course package (.zip)
     await chrome.downloads.download({

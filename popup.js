@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const courseTitle = document.getElementById('course-title');
   const courseMeta = document.getElementById('course-meta');
   const btnExport = document.getElementById('btn-export');
+  const btnExportMarkdown = document.getElementById('btn-export-markdown');
   const progressSection = document.getElementById('progress-section');
   const progressFill = document.getElementById('progress-fill');
   const progressPercent = document.getElementById('progress-percent');
@@ -40,13 +41,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     courseTitle.textContent = response.courseInfo.name;
     courseMeta.textContent = `Course OrgUnit ID: ${response.orgUnitId}`;
     btnExport.disabled = false;
+    btnExportMarkdown.disabled = false;
   });
 
   // Handle Export button click
   btnExport.addEventListener('click', () => {
+    startExport('html');
+  });
+
+  // Handle Markdown Export button click
+  btnExportMarkdown.addEventListener('click', () => {
+    startExport('markdown');
+  });
+
+  function startExport(exportFormat) {
     if (!activeOrgUnitId) return;
 
     btnExport.disabled = true;
+    btnExportMarkdown.disabled = true;
     progressSection.classList.remove('hidden');
     resultMessage.classList.add('hidden');
 
@@ -55,12 +67,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.tabs.sendMessage(tab.id, {
       action: 'START_EXPORT',
       orgUnitId: activeOrgUnitId,
-      downloadAssets: optDownloadAssets.checked
+      downloadAssets: optDownloadAssets.checked,
+      exportFormat: exportFormat
     }, (response) => {
       if (chrome.runtime.lastError || !response || !response.success) {
         const err = (response && response.error) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'Export failed.';
         updateProgress(0, `Error: ${err}`);
         btnExport.disabled = false;
+        btnExportMarkdown.disabled = false;
         return;
       }
 
@@ -69,9 +83,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         progressSection.classList.add('hidden');
         resultMessage.classList.remove('hidden');
         btnExport.disabled = false;
+        btnExportMarkdown.disabled = false;
       }, 1000);
     });
-  });
+  }
 
   function updateProgress(percent, text) {
     progressFill.style.width = `${percent}%`;
