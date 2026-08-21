@@ -49,8 +49,29 @@ async function handleFetchFile(payload, sendResponse) {
 async function handleZipDownload(payload, sendResponse) {
   try {
     const { courseId, courseName, zipDataUrl, suffix } = payload;
-    const sanitizedCourseName = (courseName || `Course_${courseId}`).replace(/[^a-z0-9_-]/gi, '_');
-    const zipFileName = `UoPeople_${sanitizedCourseName}_${suffix || 'Offline'}.zip`;
+    let cleanName = (courseName || `Course_${courseId}`).trim();
+
+    // 1. Strip trailing Brightspace / LMS brand suffixes
+    cleanName = cleanName.replace(/\s*-\s*(?:Brightspace|University of the People|UoPeople|D2L).*$/i, '').trim();
+
+    // 2. Extract course code onwards if preceded by page title
+    const courseCodeMatch = cleanName.match(/(?:^|.*?\s+-\s+)([A-Z]{2,6}\s*\d{3,5}(?:-\d+)?\s+.*)$/i);
+    if (courseCodeMatch && courseCodeMatch[1]) {
+      cleanName = courseCodeMatch[1].trim();
+    } else {
+      const pagePrefixRegex = /^(?:Homepage|Course Home(?:page)?|Home|Table of Contents|TOC|Content(?:s)?|Announcements?|Discussions?|Discussion Forum(?: [^-]+)?|Assignments?|Assignment Activity(?: [^-]+)?|Written Assignment(?: [^-]+)?|Learning Guide(?: [^-]+)?|Reading Assignment(?: [^-]+)?|Self-Quiz(?: [^-]+)?|Graded Quiz(?: [^-]+)?|Review Quiz(?: [^-]+)?|Final Exam(?: [^-]+)?|Quizzes|Grades?|Classlist|Lessons?|Course Overview|Overview|Unit\s+\d+(?: [^-]+)?)\s*-\s*/i;
+      while (pagePrefixRegex.test(cleanName)) {
+        cleanName = cleanName.replace(pagePrefixRegex, '').trim();
+      }
+    }
+
+    // 3. Clean up non-alphanumeric chars for safe filename without ugly multiple underscores
+    const sanitizedCourseName = cleanName
+      .replace(/[^a-zA-Z0-9_-]+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    const zipFileName = `UoPeople_${sanitizedCourseName || `Course_${courseId}`}_${suffix || 'Offline'}.zip`;
 
     // Triggers a SINGLE download prompt for the entire course package (.zip)
     await chrome.downloads.download({

@@ -2,6 +2,30 @@
  * Brightspace (D2L) Valence API & Scraper helper
  */
 const D2LApi = {
+  cleanCourseName(name) {
+    if (!name || typeof name !== 'string') return '';
+    let str = name.trim();
+
+    // 1. Strip trailing Brightspace / LMS brand suffixes
+    str = str.replace(/\s*-\s*(?:Brightspace|University of the People|UoPeople|D2L).*$/i, '').trim();
+
+    // 2. Check if a course code pattern ([A-Z]{2,6} \d{3,5}...) exists after any " - " separator
+    // e.g. "Homepage - PHIL 1402-01 Introduction to Philosophy - AY2026-T5" -> "PHIL 1402-01 Introduction to Philosophy - AY2026-T5"
+    // e.g. "Assignment Activity Unit 1 - HIST 1421-01 Greek and Roman Civilization - AY2026-T5" -> "HIST 1421-01 Greek and Roman Civilization - AY2026-T5"
+    const courseCodeMatch = str.match(/(?:^|.*?\s+-\s+)([A-Z]{2,6}\s*\d{3,5}(?:-\d+)?\s+.*)$/i);
+    if (courseCodeMatch && courseCodeMatch[1]) {
+      str = courseCodeMatch[1].trim();
+    } else {
+      // 3. Strip known Brightspace page/activity prefixes
+      const pagePrefixRegex = /^(?:Homepage|Course Home(?:page)?|Home|Table of Contents|TOC|Content(?:s)?|Announcements?|Discussions?|Discussion Forum(?: [^-]+)?|Assignments?|Assignment Activity(?: [^-]+)?|Written Assignment(?: [^-]+)?|Learning Guide(?: [^-]+)?|Reading Assignment(?: [^-]+)?|Self-Quiz(?: [^-]+)?|Graded Quiz(?: [^-]+)?|Review Quiz(?: [^-]+)?|Final Exam(?: [^-]+)?|Quizzes|Grades?|Classlist|Lessons?|Course Overview|Overview|Unit\s+\d+(?: [^-]+)?)\s*-\s*/i;
+      while (pagePrefixRegex.test(str)) {
+        str = str.replace(pagePrefixRegex, '').trim();
+      }
+    }
+
+    return str.trim();
+  },
+
   async getCourseInfo(orgUnitId) {
     try {
       const resp = await fetch(`/d2l/api/lp/1.30/courses/${orgUnitId}`, {
@@ -9,9 +33,10 @@ const D2LApi = {
       });
       if (resp.ok) {
         const data = await resp.json();
+        const rawName = data.Name || data.Code || `Course ${orgUnitId}`;
         return {
           id: orgUnitId,
-          name: data.Name || data.Code || `Course ${orgUnitId}`,
+          name: this.cleanCourseName(rawName) || `Course ${orgUnitId}`,
           code: data.Code || ''
         };
       }
@@ -19,13 +44,21 @@ const D2LApi = {
       console.warn('LP API failed, falling back to document title / DOM', e);
     }
 
-    const titleElem = document.querySelector('.d2l-navigation-s-course-title, .d2l-navbar-title, title');
-    let name = titleElem ? titleElem.innerText.trim() : `UoPeople Course ${orgUnitId}`;
-    name = name.replace(/ - Brightspace.*$/, '').replace(/^Home - /, '');
+    // Try DOM elements in order of specificity
+    let rawName = '';
+    const navLink = document.querySelector('a.d2l-navigation-s-link[href*="/d2l/home/"], a[href*="/d2l/home/"]');
+    if (navLink && navLink.innerText && navLink.innerText.trim()) {
+      rawName = navLink.innerText.trim();
+    }
+
+    if (!rawName) {
+      const titleElem = document.querySelector('.d2l-navigation-s-course-title, .d2l-navbar-title, title');
+      rawName = titleElem ? (titleElem.innerText || titleElem.textContent || '').trim() : `UoPeople Course ${orgUnitId}`;
+    }
 
     return {
       id: orgUnitId,
-      name: name,
+      name: this.cleanCourseName(rawName) || `Course ${orgUnitId}`,
       code: ''
     };
   },

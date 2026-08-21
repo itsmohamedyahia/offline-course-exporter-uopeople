@@ -73,6 +73,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
+  function cleanCourseName(name) {
+    if (!name || typeof name !== 'string') return '';
+    let str = name.trim();
+    str = str.replace(/\s*-\s*(?:Brightspace|University of the People|UoPeople|D2L).*$/i, '').trim();
+    const courseCodeMatch = str.match(/(?:^|.*?\s+-\s+)([A-Z]{2,6}\s*\d{3,5}(?:-\d+)?\s+.*)$/i);
+    if (courseCodeMatch && courseCodeMatch[1]) {
+      str = courseCodeMatch[1].trim();
+    } else {
+      const pagePrefixRegex = /^(?:Homepage|Course Home(?:page)?|Home|Table of Contents|TOC|Content(?:s)?|Announcements?|Discussions?|Discussion Forum(?: [^-]+)?|Assignments?|Assignment Activity(?: [^-]+)?|Written Assignment(?: [^-]+)?|Learning Guide(?: [^-]+)?|Reading Assignment(?: [^-]+)?|Self-Quiz(?: [^-]+)?|Graded Quiz(?: [^-]+)?|Review Quiz(?: [^-]+)?|Final Exam(?: [^-]+)?|Quizzes|Grades?|Classlist|Lessons?|Course Overview|Overview|Unit\s+\d+(?: [^-]+)?)\s*-\s*/i;
+      while (pagePrefixRegex.test(str)) {
+        str = str.replace(pagePrefixRegex, '').trim();
+      }
+    }
+    return str.trim();
+  }
+
   // Ping content script
   chrome.tabs.sendMessage(tab.id, { action: 'GET_COURSE_STATUS' }, (response) => {
     if (chrome.runtime.lastError || !response || !response.detected) {
@@ -86,7 +102,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     activeOrgUnitId = response.orgUnitId;
     statusBadge.textContent = 'Course Detected';
     statusBadge.className = 'status-indicator active';
-    courseTitle.textContent = response.courseInfo.name;
+    courseTitle.textContent = cleanCourseName(response.courseInfo && response.courseInfo.name) || response.courseInfo.name;
     courseMeta.textContent = `Course OrgUnit ID: ${response.orgUnitId}`;
     btnExport.disabled = false;
     btnExportMarkdown.disabled = false;
