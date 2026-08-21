@@ -1,6 +1,19 @@
-# 🎓 UoPeople Brightspace Offline Course Exporter
+# 🎓 Offline Course Exporter for UoPeople
 
-A modern Manifest V3 browser extension designed for University of the People students to export course materials into an offline, interactive HTML website or an organized Markdown directory structure with downloadable attachments.
+A modern Manifest V3 browser extension designed for University of the People students to export course materials into an offline, interactive HTML website or an organized Markdown directory structure with downloadable attachments for personal offline study.
+
+---
+
+## ⚖️ Legal, Academic Integrity & Non-Affiliation Disclaimer
+
+> [!IMPORTANT]
+> **Non-Affiliation Notice:** This project is an independent, unofficial, student-created open-source utility. It is **not** affiliated with, endorsed by, sponsored by, or connected to **University of the People (UoPeople)** or **D2L Corporation (Brightspace)**. All trademarks and brand names belong to their respective owners.
+
+> [!NOTE]
+> **Academic Integrity & Personal Study Policy:**
+> - This tool is designed strictly for **personal educational study, archival, and offline reading** (in accordance with educational Fair Use under 17 U.S. Code § 107).
+> - **Redistribution Prohibited:** Exported course syllabi, reading PDFs, and university materials are subject to institutional copyright and academic codes of conduct. Users must **not** publicly re-host, commercially redistribute, or share copyrighted course assets.
+> - **Formative Practice Only:** This extension does not bypass any assessment security gates or scrape live proctored/graded exam question banks.
 
 ---
 
@@ -11,7 +24,7 @@ A modern Manifest V3 browser extension designed for University of the People stu
   1. **Interactive HTML Website**: Complete single-page interactive application featuring an instant search filter across all units, light/dark mode switcher, `@media print` optimized styling for printing units to PDF, and an interactive quiz browser.
   2. **Markdown Folders Export**: Structured unit folders (`Unit 1/`, `Unit 2/`, etc.) containing clean Markdown files (`overview.md`, `reading-assignments.md`, `discussion-assignment.md`, `written-assignment.md`, `learning-journal.md`, `self-quiz.md`) formatted for Obsidian, Logseq, Notion, or local study notes.
 - 📁 **Attachment & Asset Offloading**: Downloads PDFs, textbooks, syllabus documents, and supplementary files directly into a dedicated `assets/` directory and updates all links locally.
-- 🔒 **Privacy-First Architecture**: Runs 100% locally in your browser using active session cookies. No external analytics, tracking, or remote servers.
+- 🔒 **Privacy-First Architecture**: Runs 100% locally in your browser using active session cookies. Zero analytics, zero external servers, and zero data tracking.
 
 ---
 
@@ -39,7 +52,7 @@ A modern Manifest V3 browser extension designed for University of the People stu
 
 1. Log into your UoPeople Brightspace account at [https://learn.uopeople.edu](https://learn.uopeople.edu).
 2. Open any page within the course you want to export.
-3. Click the **UoPeople Course Exporter** extension icon in your browser toolbar.
+3. Click the **Offline Course Exporter for UoPeople** extension icon in your browser toolbar.
 4. The extension popup will verify your active course tab and display the detected course title.
 5. Choose your export format:
    - **Export Course Website**: Generates a self-contained offline website (`index.html` + `assets/`).
@@ -81,8 +94,9 @@ Downloads/
 
 ## 🔒 Privacy & Security
 
-- **Local Execution**: All API requests and file formatting occur client-side within your browser session.
-- **Academic Integrity**: Quiz questions are formatted for personal revision and study preservation without compromising exam delivery systems.
+- **100% Client-Side Processing**: All API requests and file formatting occur directly inside your browser session sandbox.
+- **Zero Data Collection**: No cookies, passwords, telemetry, or user analytics are ever collected or sent to external servers.
+- Read our full [Privacy Policy](PRIVACY.md).
 
 ---
 
