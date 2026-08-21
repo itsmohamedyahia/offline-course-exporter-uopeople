@@ -57,7 +57,7 @@ In compliance with Google Chrome Web Store and Microsoft Edge Add-ons developer 
 ## 6. Open Source Verification
 
 Because this extension is 100% open source under the **GNU General Public License v3.0 (GPL-3.0)**, anyone can independently audit the source code to verify this privacy policy:
-- **Source Code Repository:** [https://github.com/USERNAME/uopeople-brightspace-course-export](https://github.com/)
+- **Source Code Repository:** [https://github.com/itsmohamedyahia/offline-course-exporter-uopeople](https://github.com/itsmohamedyahia/offline-course-exporter-uopeople)
 
 ---
 

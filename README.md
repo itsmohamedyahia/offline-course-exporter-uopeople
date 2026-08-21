@@ -33,7 +33,7 @@ A modern Manifest V3 browser extension designed for University of the People stu
 ### Option 1: Clone with Git
 1. Clone this repository to your local computer:
    ```bash
-   git clone https://github.com/<your-username>/uopeople-brightspace-course-export.git
+   git clone https://github.com/itsmohamedyahia/offline-course-exporter-uopeople.git
    ```
 
 ### Option 2: Download ZIP
