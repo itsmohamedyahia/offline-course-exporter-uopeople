@@ -1024,13 +1024,16 @@ const D2LApi = {
       if (item.contentHtml) {
         fetched++;
         if (onProgress) {
-          onProgress(Math.round((fetched / Math.max(totalToFetch, 1)) * 60) + 20);
+          onProgress(Math.round((fetched / Math.max(totalToFetch, 1)) * 50) + 25, `Extracted ${fetched}/${totalToFetch}: ${item.title}`);
         }
         continue;
       }
       if (item.url) {
         const discovered = [];
         const isQuiz = unitObj.quizzes && unitObj.quizzes.some(q => q.id === item.id);
+        if (onProgress) {
+          onProgress(Math.round((fetched / Math.max(totalToFetch, 1)) * 50) + 25, `Fetching ${isQuiz ? 'quiz' : 'topic'} (${fetched + 1}/${totalToFetch}): ${item.title}`);
+        }
         if (isQuiz) {
           item.contentHtml = await this.fetchQuizAttemptContent(item, orgUnitId, quizzesList, discovered);
         } else {
@@ -1049,7 +1052,7 @@ const D2LApi = {
       }
       fetched++;
       if (onProgress) {
-        onProgress(Math.round((fetched / Math.max(totalToFetch, 1)) * 60) + 20);
+        onProgress(Math.round((fetched / Math.max(totalToFetch, 1)) * 50) + 25, `Extracted ${fetched}/${totalToFetch}: ${item.title}`);
       }
     }
 

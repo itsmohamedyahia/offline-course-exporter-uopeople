@@ -59,7 +59,7 @@ const ZipBuilder = {
 
       view.setUint32(0, 0x04034b50, true); // Local header signature
       view.setUint16(4, 10, true);         // Version needed
-      view.setUint16(6, 0, true);          // General flag
+      view.setUint16(6, 0x0800, true);     // General flag (Bit 11 = UTF-8 filenames)
       view.setUint16(8, 0, true);          // Compression method (0 = store)
       view.setUint16(10, 0, true);         // Mod time
       view.setUint16(12, 0, true);         // Mod date
@@ -80,7 +80,7 @@ const ZipBuilder = {
       cdView.setUint32(0, 0x02014b50, true); // CD signature
       cdView.setUint16(4, 20, true);         // Made by
       cdView.setUint16(6, 10, true);         // Version needed
-      cdView.setUint16(8, 0, true);          // General flag
+      cdView.setUint16(8, 0x0800, true);     // General flag (Bit 11 = UTF-8 filenames)
       cdView.setUint16(10, 0, true);         // Compression method
       cdView.setUint16(12, 0, true);         // Mod time
       cdView.setUint16(14, 0, true);         // Mod date

@@ -69,7 +69,10 @@ const HTMLBuilder = {
   <title>${escapeHtml(courseInfo.name)} - ${isShareable ? 'Study Guide & Reading List' : 'Offline Course Material'}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" crossorigin="anonymous">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
   <style>
     :root[data-theme="dark"] {
       --bg-body: #0b0f19;
@@ -364,6 +367,32 @@ const HTMLBuilder = {
       color: var(--text-muted);
       border-radius: 0 8px 8px 0;
     }
+    .topic-body pre {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      margin: 16px 0;
+      font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #e2e8f0;
+    }
+    .topic-body code {
+      font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+      font-size: 12.5px;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--accent-light, #818cf8);
+    }
+    .topic-body pre code {
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
+      color: inherit;
+    }
     .video-container {
       margin: 16px 0;
       background: rgba(0, 0, 0, 0.2);
@@ -585,8 +614,25 @@ const HTMLBuilder = {
         \`;
       }
 
-      // Filter general topics (Overview, Syllabus, Welcome, etc.)
+      // Collect IDs of topics assigned to specialized sections to prevent duplicates in Overview
+      const categorizedIds = new Set();
+      (unit.readings || []).forEach(t => { if (t.id) categorizedIds.add(t.id); });
+      if (!isShareable) {
+        (unit.discussions || []).forEach(t => { if (t.id) categorizedIds.add(t.id); });
+        (unit.assignments || []).forEach(t => { if (t.id) categorizedIds.add(t.id); });
+        (unit.quizzes || []).forEach(t => { if (t.id) categorizedIds.add(t.id); });
+      }
+
+      // Extract Conclusion topics
+      const conclusionTopics = (unit.topics || []).filter(t => {
+        const title = t.title.toLowerCase();
+        return title.includes('conclusion');
+      });
+      conclusionTopics.forEach(t => { if (t.id) categorizedIds.add(t.id); });
+
+      // Filter general topics (Overview, Syllabus, Welcome, etc.) excluding any specialized topics
       const generalTopics = (unit.topics || []).filter(t => {
+        if (t.id && categorizedIds.has(t.id)) return false;
         const title = t.title.toLowerCase();
         return !title.includes('reading') &&
                !title.includes('textbook') &&
@@ -598,12 +644,6 @@ const HTMLBuilder = {
                !title.includes('exam') &&
                !title.includes('test') &&
                !title.includes('conclusion');
-      });
-
-      // Extract Conclusion topics
-      const conclusionTopics = (unit.topics || []).filter(t => {
-        const title = t.title.toLowerCase();
-        return title.includes('conclusion');
       });
 
       // Overview / General Section
@@ -849,6 +889,23 @@ const HTMLBuilder = {
       }
 
       main.innerHTML = html;
+
+      // Render math formulas if KaTeX is loaded
+      if (window.renderMathInElement) {
+        try {
+          renderMathInElement(main, {
+            delimiters: [
+              { left: '$$', right: '$$', display: true },
+              { left: '\\[', right: '\\]', display: true },
+              { left: '\\(', right: '\\)', display: false },
+              { left: '$', right: '$', display: false }
+            ],
+            throwOnError: false
+          });
+        } catch (e) {
+          console.warn('Math rendering error:', e);
+        }
+      }
 
       // Add event listeners for quiz toggle badges
       main.querySelectorAll('.quiz-details-accordion').forEach(details => {

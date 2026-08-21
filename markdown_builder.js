@@ -206,8 +206,23 @@ const MarkdownBuilder = {
       const folderName = `${String(unitIdx + 1).padStart(2, '0')}_${this.sanitizeFolderName(unit.title)}`;
       readmeContent += `- [${unit.title}](./${encodeURIComponent(folderName)})\n`;
 
+      // Collect IDs of topics assigned to specialized sections to prevent duplicates in Overview
+      const categorizedIds = new Set();
+      (unit.readings || []).forEach(t => { if (t.id) categorizedIds.add(t.id); });
+      if (!isShareable) {
+        (unit.discussions || []).forEach(t => { if (t.id) categorizedIds.add(t.id); });
+        (unit.assignments || []).forEach(t => { if (t.id) categorizedIds.add(t.id); });
+        (unit.quizzes || []).forEach(t => { if (t.id) categorizedIds.add(t.id); });
+      }
+      const conclusionTopics = (unit.topics || []).filter(t => {
+        const title = t.title.toLowerCase();
+        return title.includes('conclusion');
+      });
+      conclusionTopics.forEach(t => { if (t.id) categorizedIds.add(t.id); });
+
       // 1. General topics -> 01_Overview.md
       const generalTopics = (unit.topics || []).filter(t => {
+        if (t.id && categorizedIds.has(t.id)) return false;
         const title = t.title.toLowerCase();
         return !title.includes('reading') &&
                !title.includes('textbook') &&
@@ -256,6 +271,17 @@ const MarkdownBuilder = {
           }
           md += `---\n\n`;
         });
+
+        // Add downloaded local attachments reference if present
+        if (unit.attachments && unit.attachments.length > 0) {
+          md += `## 📎 Downloaded Attachments & Files\n\n`;
+          unit.attachments.forEach(att => {
+            const cleanFileName = att.localFileName || (att.title.replace(/[^a-zA-Z0-9_.-]/g, '_') + '.' + (att.ext || 'pdf'));
+            md += `- [📄 ${att.title}](assets/${cleanFileName})\n`;
+          });
+          md += `\n---\n\n`;
+        }
+
         addFile(folderName, '02_Readings.md', md);
       }
 
@@ -361,11 +387,6 @@ const MarkdownBuilder = {
       }
 
       // 8. Conclusion -> 08_Conclusion.md (Included in both)
-      const conclusionTopics = (unit.topics || []).filter(t => {
-        const title = t.title.toLowerCase();
-        return title.includes('conclusion');
-      });
-
       if (conclusionTopics.length > 0) {
         let md = `# ${unit.title} - Conclusion\n\n`;
         conclusionTopics.forEach(c => {

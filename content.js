@@ -64,9 +64,22 @@
     }
   });
 
+  function emitProgress(percent, status) {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'EXPORT_PROGRESS',
+        percent: Math.min(Math.max(percent, 0), 100),
+        status: status
+      }, () => {
+        if (chrome.runtime.lastError) {}
+      });
+    } catch (e) {}
+  }
+
   async function runExportPipeline(orgUnitId, downloadAssets, exportFormat, exportScope, sendResponse) {
     try {
       console.log(`Starting export pipeline for OrgUnitID: ${orgUnitId} (Format: ${exportFormat}, Scope: ${exportScope})`);
+      emitProgress(8, 'Fetching course Table of Contents...');
 
       const courseInfo = await D2LApi.getCourseInfo(orgUnitId);
       const tocData = await D2LApi.getTOC(orgUnitId);
@@ -83,6 +96,7 @@
 
       // In Shareable mode, we skip fetching assignment rubrics, dropbox folders, and quizzes
       if (exportScope !== 'shareable') {
+        emitProgress(16, 'Querying discussions, assignments, rubrics & quizzes...');
         console.log('Fetching course assignment activities, discussions, rubrics and quizzes from D2L API...');
         try {
           const [dropboxes, forums, rubrics, quizzesValence, quizzesLms] = await Promise.all([
@@ -130,8 +144,10 @@
         }
       }
 
-      const units = await D2LApi.parseModules(tocData, { dropboxFolders, discussionTopics, rubricsMap, quizzesList, orgUnitId }, (progress) => {
-        console.log(`Extraction progress: ${progress}%`);
+      emitProgress(25, 'Extracting unit contents & quizzes...');
+      const units = await D2LApi.parseModules(tocData, { dropboxFolders, discussionTopics, rubricsMap, quizzesList, orgUnitId }, (progress, statusText) => {
+        emitProgress(progress, statusText || 'Extracting unit contents & quizzes...');
+        console.log(`Extraction progress: ${progress}% - ${statusText || ''}`);
       });
 
       const exportedAt = new Date().toLocaleDateString('en-US', {
@@ -143,12 +159,16 @@
       const zipFiles = [];
 
       if (exportFormat === 'markdown') {
+        emitProgress(75, 'Generating Markdown documents...');
         const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope);
         zipFiles.push(...markdownFiles);
 
         // Fetch attachment files & embedded PDFs if enabled
         if (downloadAssets) {
           const downloadedCache = new Map(); // url -> Uint8Array
+          let totalAttachments = 0;
+          units.forEach(u => totalAttachments += (u.attachments ? u.attachments.length : 0));
+          let currentAttachmentIdx = 0;
 
           for (let unitIdx = 0; unitIdx < units.length; unitIdx++) {
             const unit = units[unitIdx];
@@ -157,6 +177,13 @@
             if (unit.attachments && unit.attachments.length > 0) {
               for (const att of unit.attachments) {
                 if (att.url) {
+                  currentAttachmentIdx++;
+                  const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
+                  emitProgress(
+                    75 + Math.round((currentAttachmentIdx / Math.max(totalAttachments, 1)) * 15),
+                    `Downloading asset (${currentAttachmentIdx}/${totalAttachments}): ${cleanFileName}`
+                  );
+
                   let bytes = downloadedCache.get(att.url);
                   if (!bytes) {
                     try {
@@ -184,7 +211,6 @@
                   }
 
                   if (bytes) {
-                    const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
                     zipFiles.push({
                       name: `${unitFolderName}/assets/${cleanFileName}`,
                       content: bytes
@@ -197,6 +223,7 @@
           }
         }
       } else {
+        emitProgress(75, 'Generating offline interactive website...');
         const htmlContent = HTMLBuilder.buildOfflineSite({
           courseInfo: courseInfo,
           units: units,
@@ -212,53 +239,68 @@
         // Fetch attachment files & embedded PDFs if enabled
         if (downloadAssets) {
           const downloadedUrls = new Set();
-
+          const uniqueAttachments = [];
           for (const unit of units) {
             if (unit.attachments && unit.attachments.length > 0) {
               for (const att of unit.attachments) {
                 if (att.url && !downloadedUrls.has(att.url)) {
                   downloadedUrls.add(att.url);
-                  try {
-                    const result = await new Promise((resolve) => {
-                      chrome.runtime.sendMessage(
-                        { action: 'FETCH_FILE', url: att.url },
-                        (response) => resolve(response)
-                      );
-                    });
-
-                    if (result && result.success && result.base64) {
-                      // Decode base64 back to Uint8Array
-                      const binaryStr = atob(result.base64);
-                      const bytes = new Uint8Array(binaryStr.length);
-                      for (let i = 0; i < binaryStr.length; i++) {
-                        bytes[i] = binaryStr.charCodeAt(i);
-                      }
-
-                      const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
-                      zipFiles.push({
-                        name: `assets/${cleanFileName}`,
-                        content: bytes
-                      });
-                      console.log(`Packed asset: assets/${cleanFileName} (${bytes.length} bytes)`);
-                    } else {
-                      console.warn(`Background fetch failed for ${att.url}:`, result?.error);
-                    }
-                  } catch (e) {
-                    console.warn(`Could not download attachment ${att.url}:`, e);
-                  }
+                  uniqueAttachments.push(att);
                 }
               }
+            }
+          }
+
+          let currentAttachmentIdx = 0;
+          const totalAttachments = uniqueAttachments.length;
+
+          for (const att of uniqueAttachments) {
+            currentAttachmentIdx++;
+            const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
+            emitProgress(
+              75 + Math.round((currentAttachmentIdx / Math.max(totalAttachments, 1)) * 15),
+              `Downloading asset (${currentAttachmentIdx}/${totalAttachments}): ${cleanFileName}`
+            );
+
+            try {
+              const result = await new Promise((resolve) => {
+                chrome.runtime.sendMessage(
+                  { action: 'FETCH_FILE', url: att.url },
+                  (response) => resolve(response)
+                );
+              });
+
+              if (result && result.success && result.base64) {
+                // Decode base64 back to Uint8Array
+                const binaryStr = atob(result.base64);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) {
+                  bytes[i] = binaryStr.charCodeAt(i);
+                }
+
+                zipFiles.push({
+                  name: `assets/${cleanFileName}`,
+                  content: bytes
+                });
+                console.log(`Packed asset: assets/${cleanFileName} (${bytes.length} bytes)`);
+              } else {
+                console.warn(`Background fetch failed for ${att.url}:`, result?.error);
+              }
+            } catch (e) {
+              console.warn(`Could not download attachment ${att.url}:`, e);
             }
           }
         }
       }
 
+      emitProgress(93, 'Compressing package into ZIP archive...');
       const zipBlob = await ZipBuilder.createZip(zipFiles);
 
       const downloadSuffix = exportFormat === 'markdown'
         ? (exportScope === 'shareable' ? 'StudyGuide_Markdown' : 'Markdown_Offline')
         : (exportScope === 'shareable' ? 'StudyGuide_Offline' : 'Offline');
 
+      emitProgress(98, 'Packaging complete! Sending to downloads...');
       const reader = new FileReader();
       reader.onloadend = function () {
         const dataUrl = reader.result;
@@ -269,6 +311,7 @@
           zipDataUrl: dataUrl,
           suffix: downloadSuffix
         }, (res) => {
+          emitProgress(100, `Done! Extracted ${units.length} units.`);
           sendResponse({ success: true, unitsCount: units.length });
         });
       };

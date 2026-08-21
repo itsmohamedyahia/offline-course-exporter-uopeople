@@ -89,9 +89,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     return str.trim();
   }
 
-  // Ping content script
-  chrome.tabs.sendMessage(tab.id, { action: 'GET_COURSE_STATUS' }, (response) => {
-    if (chrome.runtime.lastError || !response || !response.detected) {
+  // Listen for live progress events from content script
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === 'EXPORT_PROGRESS') {
+      updateProgress(msg.percent, msg.status);
+    }
+  });
+
+  function handleCourseStatusResponse(response) {
+    if (!response || !response.detected) {
       statusBadge.textContent = 'No Course ID';
       statusBadge.className = 'status-indicator searching';
       courseTitle.textContent = 'Brightspace Page Loaded';
@@ -102,11 +108,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     activeOrgUnitId = response.orgUnitId;
     statusBadge.textContent = 'Course Detected';
     statusBadge.className = 'status-indicator active';
-    courseTitle.textContent = cleanCourseName(response.courseInfo && response.courseInfo.name) || response.courseInfo.name;
+    courseTitle.textContent = cleanCourseName(response.courseInfo && response.courseInfo.name) || (response.courseInfo && response.courseInfo.name) || `Course ${response.orgUnitId}`;
     courseMeta.textContent = `Course OrgUnit ID: ${response.orgUnitId}`;
     btnExport.disabled = false;
     btnExportMarkdown.disabled = false;
-  });
+  }
+
+  // Ping content script with auto-injection fallback for already-open tabs
+  function checkCourseStatus() {
+    chrome.tabs.sendMessage(tab.id, { action: 'GET_COURSE_STATUS' }, (response) => {
+      if (chrome.runtime.lastError || !response) {
+        // Content script might not be injected yet on this tab; auto-inject using scripting API
+        if (chrome.scripting && tab.id) {
+          chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['zip_builder.js', 'd2l_api.js', 'html_builder.js', 'markdown_builder.js', 'content.js']
+          }).then(() => {
+            setTimeout(() => {
+              chrome.tabs.sendMessage(tab.id, { action: 'GET_COURSE_STATUS' }, (retryResponse) => {
+                if (chrome.runtime.lastError || !retryResponse) {
+                  handleCourseStatusResponse(null);
+                } else {
+                  handleCourseStatusResponse(retryResponse);
+                }
+              });
+            }, 100);
+          }).catch((err) => {
+            console.warn('Auto-injection failed:', err);
+            handleCourseStatusResponse(null);
+          });
+          return;
+        }
+        handleCourseStatusResponse(null);
+        return;
+      }
+      handleCourseStatusResponse(response);
+    });
+  }
+
+  checkCourseStatus();
 
   // Handle Export button click
   btnExport.addEventListener('click', () => {
@@ -130,9 +170,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const statusMsg = exportScope === 'shareable'
       ? 'Extracting shareable syllabus & reading guides...'
-      : 'Querying Brightspace Valence API...';
+      : 'Initializing Brightspace Valence API...';
 
-    updateProgress(20, statusMsg);
+    updateProgress(5, statusMsg);
 
     chrome.tabs.sendMessage(tab.id, {
       action: 'START_EXPORT',
@@ -162,6 +202,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   function updateProgress(percent, text) {
     progressFill.style.width = `${percent}%`;
     progressPercent.textContent = `${percent}%`;
-    progressDetail.textContent = text;
+    if (text) {
+      progressDetail.textContent = text;
+    }
   }
 });
