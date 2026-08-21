@@ -10,21 +10,24 @@ A modern Manifest V3 browser extension designed for University of the People stu
 > **Non-Affiliation Notice:** This project is an independent, unofficial, student-created open-source utility. It is **not** affiliated with, endorsed by, sponsored by, or connected to **University of the People (UoPeople)** or **D2L Corporation (Brightspace)**. All trademarks and brand names belong to their respective owners.
 
 > [!NOTE]
-> **Academic Integrity & Personal Study Policy:**
-> - This tool is designed strictly for **personal educational study, archival, and offline reading** (in accordance with educational Fair Use under 17 U.S. Code § 107).
-> - **Redistribution Prohibited:** Exported course syllabi, reading PDFs, and university materials are subject to institutional copyright and academic codes of conduct. Users must **not** publicly re-host, commercially redistribute, or share copyrighted course assets.
-> - **Formative Practice Only:** This extension does not bypass any assessment security gates or scrape live proctored/graded exam question banks.
+> **Academic Integrity & Sharing Guidelines:**
+> - **Personal Full Archive Mode:** Backs up all course components (syllabus, readings, discussions, assignments, self-quizzes) for your own personal revision and study.
+> - **Peer-Safe Study Guide Mode:** Exports only the syllabus, unit overviews, and reading assignment lists while automatically stripping all graded discussion prompts, written assignments, learning journals, and quiz question banks. This mode is 100% compliant with university policies to share with prospective students preparing for upcoming courses.
+> - **Redistribution Warning:** Never publicly re-host or commercially sell copyrighted third-party textbook PDFs or university course assets.
 
 ---
 
 ## ✨ Key Features
 
 - 📌 **Universal Course Detection**: Automatically detects course OrgUnit IDs and course titles from **any** Brightspace page (e.g. course homepage, syllabus, or specific lesson/unit URLs).
-- 📦 **Dual Export Modes**:
-  1. **Interactive HTML Website**: Complete single-page interactive application featuring an instant search filter across all units, light/dark mode switcher, `@media print` optimized styling for printing units to PDF, and an interactive quiz browser.
-  2. **Markdown Folders Export**: Structured unit folders (`Unit 1/`, `Unit 2/`, etc.) containing clean Markdown files (`overview.md`, `reading-assignments.md`, `discussion-assignment.md`, `written-assignment.md`, `learning-journal.md`, `self-quiz.md`) formatted for Obsidian, Logseq, Notion, or local study notes.
-- 📁 **Attachment & Asset Offloading**: Downloads PDFs, textbooks, syllabus documents, and supplementary files directly into a dedicated `assets/` directory and updates all links locally.
-- 🔒 **Privacy-First Architecture**: Runs 100% locally in your browser using active session cookies. Zero analytics, zero external servers, and zero data tracking.
+- 🛡️ **Flexible Export Scopes**:
+  - 🔒 **Full Course Archive (Personal)**: Complete archive including syllabus, readings, discussions, assignments, and practice quizzes.
+  - 👥 **Shareable Study Guide (Peer-Safe)**: Curated syllabus, unit learning goals, and reading lists only. Excludes graded evaluation prompts and quizzes for safe peer sharing.
+- 📦 **Dual Output Formats**:
+  1. **Interactive HTML Website**: Single-page interactive web application with instant search, dark/light mode toggle, `@media print` PDF support, and collapsible quiz browsers.
+  2. **Markdown Folders Export**: Modular unit folders (`01_Overview.md`, `02_Readings.md`, etc.) formatted for Obsidian, Logseq, Notion, or local note systems.
+- 📁 **Attachment Offloading**: Downloads PDFs, textbooks, syllabus documents, and supplementary files directly into a dedicated `assets/` directory and re-links them locally.
+- 🔒 **Privacy-First Architecture**: Runs 100% locally in your browser using active session cookies. Zero telemetry, zero external servers, and zero data tracking.
 
 ---
 
@@ -53,11 +56,13 @@ A modern Manifest V3 browser extension designed for University of the People stu
 1. Log into your UoPeople Brightspace account at [https://learn.uopeople.edu](https://learn.uopeople.edu).
 2. Open any page within the course you want to export.
 3. Click the **Offline Course Exporter for UoPeople** extension icon in your browser toolbar.
-4. The extension popup will verify your active course tab and display the detected course title.
-5. Choose your export format:
+4. Select your **Export Mode**:
+   - 🔒 **Full Archive (Personal)**: Includes all syllabus, readings, discussions, assignments, and quizzes.
+   - 👥 **Study Guide (Peer-Safe)**: Includes syllabus and reading lists only (safe to share with fellow students).
+5. Choose your output format:
    - **Export Course Website**: Generates a self-contained offline website (`index.html` + `assets/`).
    - **Export Markdown Folders**: Generates an organized ZIP archive containing modular Markdown files by unit.
-6. The files will download automatically to your default browser Downloads directory.
+6. The archive will download automatically to your default browser Downloads directory.
 
 ---
 
@@ -66,7 +71,7 @@ A modern Manifest V3 browser extension designed for University of the People stu
 ### HTML Export (`Export Course Website`)
 ```
 Downloads/
-└── UoPeople_<Course_Code>_Offline/
+└── UoPeople_<Course_Code>_Offline.zip (or _StudyGuide_Offline.zip)
     ├── index.html           <-- Interactive offline website
     └── assets/              <-- Downloaded PDFs, readings, and attachments
         ├── Textbook_Ch1.pdf
@@ -76,18 +81,18 @@ Downloads/
 ### Markdown Export (`Export Markdown Folders`)
 ```
 Downloads/
-└── UoPeople_<Course_Code>_Markdown.zip
-    ├── Course-Overview/
-    │   └── syllabus.md
-    ├── Unit-01/
-    │   ├── overview.md
-    │   ├── reading-assignments.md
-    │   ├── discussion-assignment.md
-    │   └── self-quiz.md
-    ├── Unit-02/
-    │   └── ...
-    └── assets/
-        └── Unit1_Reading.pdf
+└── UoPeople_<Course_Code>_Markdown_Offline.zip (or _StudyGuide_Markdown.zip)
+    ├── README.md
+    ├── 01_Course_Introduction/
+    │   └── 01_Overview.md
+    ├── 02_Unit_1_Introduction/
+    │   ├── 01_Overview.md
+    │   ├── 02_Readings.md
+    │   ├── 03_Discussions.md     <-- (Omitted in Peer-Safe Mode)
+    │   ├── 04_Assignments.md     <-- (Omitted in Peer-Safe Mode)
+    │   ├── 06_Self_Quizzes.md    <-- (Omitted in Peer-Safe Mode)
+    │   └── assets/
+    └── ...
 ```
 
 ---

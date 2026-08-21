@@ -11,8 +11,42 @@ document.addEventListener('DOMContentLoaded', async () => {
   const progressDetail = document.getElementById('progress-detail');
   const resultMessage = document.getElementById('result-message');
   const optDownloadAssets = document.getElementById('opt-download-assets');
+  const scopeRadios = document.querySelectorAll('input[name="export-scope"]');
 
   let activeOrgUnitId = null;
+
+  // Restore stored preferences
+  if (chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(['optDownloadAssets', 'exportScope'], (res) => {
+      if (res.optDownloadAssets !== undefined) {
+        optDownloadAssets.checked = res.optDownloadAssets;
+      }
+      if (res.exportScope) {
+        const targetRadio = document.querySelector(`input[name="export-scope"][value="${res.exportScope}"]`);
+        if (targetRadio) targetRadio.checked = true;
+      }
+    });
+  }
+
+  // Save preferences on change
+  optDownloadAssets.addEventListener('change', () => {
+    if (chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ optDownloadAssets: optDownloadAssets.checked });
+    }
+  });
+
+  scopeRadios.forEach(radio => {
+    radio.addEventListener('change', () => {
+      if (chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ exportScope: radio.value });
+      }
+    });
+  });
+
+  function getSelectedScope() {
+    const checked = document.querySelector('input[name="export-scope"]:checked');
+    return checked ? checked.value : 'full';
+  }
 
   // Query active tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -57,18 +91,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   function startExport(exportFormat) {
     if (!activeOrgUnitId) return;
 
+    const exportScope = getSelectedScope();
+
     btnExport.disabled = true;
     btnExportMarkdown.disabled = true;
     progressSection.classList.remove('hidden');
     resultMessage.classList.add('hidden');
 
-    updateProgress(20, 'Querying Brightspace Valence API...');
+    const statusMsg = exportScope === 'shareable'
+      ? 'Extracting shareable syllabus & reading guides...'
+      : 'Querying Brightspace Valence API...';
+
+    updateProgress(20, statusMsg);
 
     chrome.tabs.sendMessage(tab.id, {
       action: 'START_EXPORT',
       orgUnitId: activeOrgUnitId,
       downloadAssets: optDownloadAssets.checked,
-      exportFormat: exportFormat
+      exportFormat: exportFormat,
+      exportScope: exportScope
     }, (response) => {
       if (chrome.runtime.lastError || !response || !response.success) {
         const err = (response && response.error) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'Export failed.';
@@ -78,7 +119,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      updateProgress(100, `Done! Extracted ${response.unitsCount} units.`);
+      updateProgress(100, `Done! Extracted ${response.unitsCount} units (${exportScope === 'shareable' ? 'Peer-Safe' : 'Full'}).`);
       setTimeout(() => {
         progressSection.classList.add('hidden');
         resultMessage.classList.remove('hidden');

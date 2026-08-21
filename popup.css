@@ -32,7 +32,7 @@ body {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .app-header {
@@ -119,6 +119,99 @@ body {
   background: rgba(239, 68, 68, 0.2);
   color: #ef4444;
   border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+/* Export Scope Selector */
+.scope-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scope-title-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.scope-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scope-radio-card {
+  display: block;
+  cursor: pointer;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.scope-radio-card:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(30, 41, 59, 0.85);
+}
+
+.scope-radio-card input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scope-radio-card:has(input[type="radio"]:checked) {
+  border-color: var(--accent-primary);
+  background: rgba(59, 130, 246, 0.12);
+  box-shadow: 0 0 0 1px var(--accent-primary);
+}
+
+.scope-radio-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.scope-icon {
+  font-size: 13px;
+}
+
+.scope-radio-header strong {
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.scope-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  margin-left: auto;
+  letter-spacing: 0.3px;
+}
+
+.badge-personal {
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.badge-safe {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.scope-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 .options-group {
@@ -240,7 +333,7 @@ body {
 
 .btn {
   width: 100%;
-  padding: 12px;
+  padding: 11px 12px;
   border-radius: var(--radius);
   border: none;
   font-family: inherit;

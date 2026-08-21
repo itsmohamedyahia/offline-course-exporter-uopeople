@@ -52,20 +52,21 @@
       const orgUnitId = request.orgUnitId || detectOrgUnitId();
       const downloadAssets = request.downloadAssets !== false;
       const exportFormat = request.exportFormat || 'html';
+      const exportScope = request.exportScope || 'full';
 
       if (!orgUnitId) {
         sendResponse({ success: false, error: 'Could not identify course ID.' });
         return true;
       }
 
-      runExportPipeline(orgUnitId, downloadAssets, exportFormat, sendResponse);
+      runExportPipeline(orgUnitId, downloadAssets, exportFormat, exportScope, sendResponse);
       return true;
     }
   });
 
-  async function runExportPipeline(orgUnitId, downloadAssets, exportFormat, sendResponse) {
+  async function runExportPipeline(orgUnitId, downloadAssets, exportFormat, exportScope, sendResponse) {
     try {
-      console.log(`Starting export pipeline for OrgUnitID: ${orgUnitId} (Format: ${exportFormat})`);
+      console.log(`Starting export pipeline for OrgUnitID: ${orgUnitId} (Format: ${exportFormat}, Scope: ${exportScope})`);
 
       const courseInfo = await D2LApi.getCourseInfo(orgUnitId);
       const tocData = await D2LApi.getTOC(orgUnitId);
@@ -73,7 +74,6 @@
         throw new Error('Unable to retrieve course Table of Contents.');
       }
 
-      console.log('Fetching course assignment activities, discussions, rubrics and quizzes from D2L API...');
       let dropboxFolders = [];
       let discussionForums = [];
       let rubricsList = [];
@@ -81,49 +81,53 @@
       const discussionTopics = [];
       let quizzesList = [];
 
-      try {
-        const [dropboxes, forums, rubrics, quizzesValence, quizzesLms] = await Promise.all([
-          D2LApi.getDropboxFolders(orgUnitId).catch(err => { console.warn('Dropbox folders API failed:', err); return []; }),
-          D2LApi.getDiscussionForums(orgUnitId).catch(err => { console.warn('Discussion forums API failed:', err); return []; }),
-          D2LApi.getRubricsList(orgUnitId).catch(err => { console.warn('Rubrics list API failed:', err); return []; }),
-          D2LApi.getQuizzesList(orgUnitId).catch(err => { console.warn('Quizzes list API failed:', err); return []; }),
-          D2LApi.getQuizzesFromLms(orgUnitId).catch(err => { console.warn('Quizzes LMS scraper failed:', err); return []; })
-        ]);
-        dropboxFolders = dropboxes || [];
-        discussionForums = forums || [];
-        rubricsList = rubrics || [];
-        quizzesList = [...(quizzesValence || []), ...(quizzesLms || [])];
+      // In Shareable mode, we skip fetching assignment rubrics, dropbox folders, and quizzes
+      if (exportScope !== 'shareable') {
+        console.log('Fetching course assignment activities, discussions, rubrics and quizzes from D2L API...');
+        try {
+          const [dropboxes, forums, rubrics, quizzesValence, quizzesLms] = await Promise.all([
+            D2LApi.getDropboxFolders(orgUnitId).catch(err => { console.warn('Dropbox folders API failed:', err); return []; }),
+            D2LApi.getDiscussionForums(orgUnitId).catch(err => { console.warn('Discussion forums API failed:', err); return []; }),
+            D2LApi.getRubricsList(orgUnitId).catch(err => { console.warn('Rubrics list API failed:', err); return []; }),
+            D2LApi.getQuizzesList(orgUnitId).catch(err => { console.warn('Quizzes list API failed:', err); return []; }),
+            D2LApi.getQuizzesFromLms(orgUnitId).catch(err => { console.warn('Quizzes LMS scraper failed:', err); return []; })
+          ]);
+          dropboxFolders = dropboxes || [];
+          discussionForums = forums || [];
+          rubricsList = rubrics || [];
+          quizzesList = [...(quizzesValence || []), ...(quizzesLms || [])];
 
-        if (discussionForums.length > 0) {
-          await Promise.all(discussionForums.map(async (forum) => {
-            try {
-              const topics = await D2LApi.getDiscussionTopics(orgUnitId, forum.ForumId);
-              if (topics) {
-                topics.forEach(t => {
-                  t.ForumId = forum.ForumId;
-                  discussionTopics.push(t);
-                });
+          if (discussionForums.length > 0) {
+            await Promise.all(discussionForums.map(async (forum) => {
+              try {
+                const topics = await D2LApi.getDiscussionTopics(orgUnitId, forum.ForumId);
+                if (topics) {
+                  topics.forEach(t => {
+                    t.ForumId = forum.ForumId;
+                    discussionTopics.push(t);
+                  });
+                }
+              } catch (e) {
+                console.warn(`Failed to fetch topics for forum ${forum.ForumId}:`, e);
               }
-            } catch (e) {
-              console.warn(`Failed to fetch topics for forum ${forum.ForumId}:`, e);
-            }
-          }));
-        }
+            }));
+          }
 
-        if (rubricsList.length > 0) {
-          await Promise.all(rubricsList.map(async (r) => {
-            try {
-              const details = await D2LApi.getRubricDetails(orgUnitId, r.RubricId);
-              if (details) {
-                rubricsMap[r.RubricId] = details;
+          if (rubricsList.length > 0) {
+            await Promise.all(rubricsList.map(async (r) => {
+              try {
+                const details = await D2LApi.getRubricDetails(orgUnitId, r.RubricId);
+                if (details) {
+                  rubricsMap[r.RubricId] = details;
+                }
+              } catch (e) {
+                console.warn(`Failed to fetch details for rubric ${r.RubricId}:`, e);
               }
-            } catch (e) {
-              console.warn(`Failed to fetch details for rubric ${r.RubricId}:`, e);
-            }
-          }));
+            }));
+          }
+        } catch (e) {
+          console.warn('Metadata pre-fetching encountered errors:', e);
         }
-      } catch (e) {
-        console.warn('Metadata pre-fetching encountered errors:', e);
       }
 
       const units = await D2LApi.parseModules(tocData, { dropboxFolders, discussionTopics, rubricsMap, quizzesList, orgUnitId }, (progress) => {
@@ -139,7 +143,7 @@
       const zipFiles = [];
 
       if (exportFormat === 'markdown') {
-        const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units);
+        const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope);
         zipFiles.push(...markdownFiles);
 
         // Fetch attachment files & embedded PDFs if enabled
@@ -196,7 +200,8 @@
         const htmlContent = HTMLBuilder.buildOfflineSite({
           courseInfo: courseInfo,
           units: units,
-          exportedAt: exportedAt
+          exportedAt: exportedAt,
+          exportScope: exportScope
         });
 
         zipFiles.push({
@@ -250,6 +255,10 @@
 
       const zipBlob = await ZipBuilder.createZip(zipFiles);
 
+      const downloadSuffix = exportFormat === 'markdown'
+        ? (exportScope === 'shareable' ? 'StudyGuide_Markdown' : 'Markdown_Offline')
+        : (exportScope === 'shareable' ? 'StudyGuide_Offline' : 'Offline');
+
       const reader = new FileReader();
       reader.onloadend = function () {
         const dataUrl = reader.result;
@@ -258,7 +267,7 @@
           courseId: courseInfo.id,
           courseName: courseInfo.name,
           zipDataUrl: dataUrl,
-          suffix: exportFormat === 'markdown' ? 'Markdown_Offline' : 'Offline'
+          suffix: downloadSuffix
         }, (res) => {
           sendResponse({ success: true, unitsCount: units.length });
         });

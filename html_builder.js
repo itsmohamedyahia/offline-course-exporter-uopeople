@@ -4,7 +4,8 @@
  */
 const HTMLBuilder = {
   buildOfflineSite(courseData) {
-    const { courseInfo, units, exportedAt } = courseData;
+    const { courseInfo, units, exportedAt, exportScope = 'full' } = courseData;
+    const isShareable = exportScope === 'shareable';
 
     const escapeHtml = (str) => {
       if (!str) return '';
@@ -45,7 +46,7 @@ const HTMLBuilder = {
       clean = clean.replace(/<form[^>]*id="d2l_form"[^>]*>/gi, '');
       clean = clean.replace(/<\\/form>/gi, '');
       
-      // 6. Strip inline font-sizes style="font-size: ..."
+      // 4. Strip inline font-sizes style="font-size: ..."
       clean = clean.replace(/style="[^"]*font-size:\\s*[^";]+;?[^"]*"/gi, (match) => {
         let style = match.replace(/font-size:\\s*[^";]+;?/gi, '');
         if (style === 'style=""') return '';
@@ -65,7 +66,7 @@ const HTMLBuilder = {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(courseInfo.name)} - Offline Course Material</title>
+  <title>${escapeHtml(courseInfo.name)} - ${isShareable ? 'Study Guide & Reading List' : 'Offline Course Material'}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -489,7 +490,9 @@ const HTMLBuilder = {
 
   <aside class="sidebar">
     <div class="sidebar-header">
-      <span class="course-badge">UoPeople Offline</span>
+      <span class="course-badge" style="${isShareable ? 'background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);' : ''}">
+        ${isShareable ? '👥 Study Guide (Peer-Safe)' : 'UoPeople Offline'}
+      </span>
       <h1 class="course-title">${escapeHtml(courseInfo.name)}</h1>
     </div>
     <div class="search-box">
@@ -510,6 +513,7 @@ const HTMLBuilder = {
 
   <script>
     const units = ${unitsJson};
+    const isShareable = ${isShareable};
     let activeUnitIndex = 0;
 
     ${cleanContentHtmlJS}
@@ -547,7 +551,15 @@ const HTMLBuilder = {
         </header>
       \`;
 
-      // Filter general topics (Overview, Syllabus, Welcome, etc. but excluding major sections, quizzes and conclusions)
+      if (isShareable) {
+        html += \`
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 16px; font-size: 13px; color: var(--text-main);">
+            👥 <strong>Peer-Safe Study Guide:</strong> Contains syllabus overview and reading assignments for course preparation. Graded assignment prompts and quizzes are excluded in compliance with academic policies.
+          </div>
+        \`;
+      }
+
+      // Filter general topics (Overview, Syllabus, Welcome, etc.)
       const generalTopics = (unit.topics || []).filter(t => {
         const title = t.title.toLowerCase();
         return !title.includes('reading') &&
@@ -574,7 +586,7 @@ const HTMLBuilder = {
           <section class="section-card">
             <div class="section-card-header">
               <span class="tag tag-overview">Overview</span>
-              <h2>Course & Unit Information</h2>
+              <h2>Course &amp; Unit Information</h2>
             </div>
             <div class="topic-list">
               \${generalTopics.map(t => \`
@@ -610,157 +622,160 @@ const HTMLBuilder = {
         \`;
       }
 
-      // Discussion Forum Section
-      if (unit.discussions && unit.discussions.length > 0) {
-        html += \`
-          <section class="section-card">
-            <div class="section-card-header">
-              <span class="tag tag-discussion">Discussion</span>
-              <h2>Discussion Forum Prompt</h2>
-            </div>
-            <div class="topic-list">
-              \${unit.discussions.map(d => \`
-                <div class="topic-item">
-                  <h3>\${escapeHtml(d.title)}</h3>
-                  \${d.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(d.contentHtml, d.title)}</div>\` : ''}
-                  \${d.url ? \`<p><a href="\${d.url}" target="_blank" rel="noopener">Open Discussion Thread on Brightspace ↗</a></p>\` : ''}
-                </div>
-              \`).join('')}
-            </div>
-          </section>
-        \`;
-      }
+      // Discussion & Assignments & Quizzes ONLY rendered in Full Archive mode
+      if (!isShareable) {
+        // Discussion Forum Section
+        if (unit.discussions && unit.discussions.length > 0) {
+          html += \`
+            <section class="section-card">
+              <div class="section-card-header">
+                <span class="tag tag-discussion">Discussion</span>
+                <h2>Discussion Forum Prompt</h2>
+              </div>
+              <div class="topic-list">
+                \${unit.discussions.map(d => \`
+                  <div class="topic-item">
+                    <h3>\${escapeHtml(d.title)}</h3>
+                    \${d.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(d.contentHtml, d.title)}</div>\` : ''}
+                    \${d.url ? \`<p><a href="\${d.url}" target="_blank" rel="noopener">Open Discussion Thread on Brightspace ↗</a></p>\` : ''}
+                  </div>
+                \`).join('')}
+              </div>
+            </section>
+          \`;
+        }
 
-      // Assignment Activity Section
-      if (unit.assignments && unit.assignments.length > 0) {
-        html += \`
-          <section class="section-card">
-            <div class="section-card-header">
-              <span class="tag tag-assignment">Assignment</span>
-              <h2>Assignment Activity</h2>
-            </div>
-            <div class="topic-list">
-              \${unit.assignments.map(a => \`
-                <div class="topic-item">
-                  <h3>\${escapeHtml(a.title)}</h3>
-                  \${a.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(a.contentHtml, a.title)}</div>\` : ''}
-                  \${a.url ? \`<p><a href="\${a.url}" target="_blank" rel="noopener">Open Assignment Submission on Brightspace ↗</a></p>\` : ''}
-                </div>
-              \`).join('')}
-            </div>
-          </section>
-        \`;
-      }
+        // Assignment Activity Section
+        if (unit.assignments && unit.assignments.length > 0) {
+          html += \`
+            <section class="section-card">
+              <div class="section-card-header">
+                <span class="tag tag-assignment">Assignment</span>
+                <h2>Assignment Activity</h2>
+              </div>
+              <div class="topic-list">
+                \${unit.assignments.map(a => \`
+                  <div class="topic-item">
+                    <h3>\${escapeHtml(a.title)}</h3>
+                    \${a.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(a.contentHtml, a.title)}</div>\` : ''}
+                    \${a.url ? \`<p><a href="\${a.url}" target="_blank" rel="noopener">Open Assignment Submission on Brightspace ↗</a></p>\` : ''}
+                  </div>
+                \`).join('')}
+              </div>
+            </section>
+          \`;
+        }
 
-      // Quizzes Sub-sections segmentations
-      const allQuizzes = unit.quizzes || [];
-      const knowledgeChecks = allQuizzes.filter(q => q.title.toLowerCase().includes('knowledge check'));
-      const selfQuizzes = allQuizzes.filter(q => {
-        const lower = q.title.toLowerCase();
-        return (lower.includes('self-quiz') || lower.includes('self quiz')) && !lower.includes('knowledge check');
-      });
-      const assessmentQuizzes = allQuizzes.filter(q => {
-        const lower = q.title.toLowerCase();
-        return !lower.includes('knowledge check') && !lower.includes('self-quiz') && !lower.includes('self quiz');
-      });
+        // Quizzes Sub-sections segmentations
+        const allQuizzes = unit.quizzes || [];
+        const knowledgeChecks = allQuizzes.filter(q => q.title.toLowerCase().includes('knowledge check'));
+        const selfQuizzes = allQuizzes.filter(q => {
+          const lower = q.title.toLowerCase();
+          return (lower.includes('self-quiz') || lower.includes('self quiz')) && !lower.includes('knowledge check');
+        });
+        const assessmentQuizzes = allQuizzes.filter(q => {
+          const lower = q.title.toLowerCase();
+          return !lower.includes('knowledge check') && !lower.includes('self-quiz') && !lower.includes('self quiz');
+        });
 
-      // Knowledge Check Section
-      if (knowledgeChecks.length > 0) {
-        html += \`
-          <section class="section-card">
-            <div class="section-card-header">
-              <span class="tag tag-quiz" style="background-color: #3b82f6;">Knowledge Check</span>
-              <h2>Knowledge Check</h2>
-            </div>
-            <div class="quiz-group">
-              \${knowledgeChecks.map(q => \`
-                <div class="quiz-container-item" style="margin-top: 12px;">
-                  <details class="quiz-details-accordion">
-                    <summary class="quiz-summary">
-                      <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
-                        ❓ <strong>\${escapeHtml(q.title)}</strong>
-                      </span>
-                      <span class="view-questions-badge">Show Questions &amp; Answers</span>
-                    </summary>
-                    <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
-                      \${q.contentHtml || \`
-                        <div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
-                          <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
-                        </div>
-                      \`}
-                    </div>
-                  </details>
-                </div>
-              \`).join('')}
-            </div>
-          </section>
-        \`;
-      }
+        // Knowledge Check Section
+        if (knowledgeChecks.length > 0) {
+          html += \`
+            <section class="section-card">
+              <div class="section-card-header">
+                <span class="tag tag-quiz" style="background-color: #3b82f6;">Knowledge Check</span>
+                <h2>Knowledge Check</h2>
+              </div>
+              <div class="quiz-group">
+                \${knowledgeChecks.map(q => \`
+                  <div class="quiz-container-item" style="margin-top: 12px;">
+                    <details class="quiz-details-accordion">
+                      <summary class="quiz-summary">
+                        <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
+                          ❓ <strong>\${escapeHtml(q.title)}</strong>
+                        </span>
+                        <span class="view-questions-badge">Show Questions &amp; Answers</span>
+                      </summary>
+                      <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                        \${q.contentHtml || \`
+                          <div class="quiz-notice">
+                            <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
+                          </div>
+                        \`}
+                      </div>
+                    </details>
+                  </div>
+                \`).join('')}
+              </div>
+            </section>
+          \`;
+        }
 
-      // Self-Quiz Section
-      if (selfQuizzes.length > 0) {
-        html += \`
-          <section class="section-card">
-            <div class="section-card-header">
-              <span class="tag tag-quiz" style="background-color: #10b981;">Self-Quiz</span>
-              <h2>Self-Quiz</h2>
-            </div>
-            <div class="quiz-group">
-              \${selfQuizzes.map(q => \`
-                <div class="quiz-container-item" style="margin-top: 12px;">
-                  <details class="quiz-details-accordion">
-                    <summary class="quiz-summary">
-                      <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
-                        ❓ <strong>\${escapeHtml(q.title)}</strong>
-                      </span>
-                      <span class="view-questions-badge">Show Questions &amp; Answers</span>
-                    </summary>
-                    <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
-                      \${q.contentHtml || \`
-                        <div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
-                          <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
-                        </div>
-                      \`}
-                    </div>
-                  </details>
-                </div>
-              \`).join('')}
-            </div>
-          </section>
-        \`;
-      }
+        // Self-Quiz Section
+        if (selfQuizzes.length > 0) {
+          html += \`
+            <section class="section-card">
+              <div class="section-card-header">
+                <span class="tag tag-quiz" style="background-color: #10b981;">Self-Quiz</span>
+                <h2>Self-Quiz</h2>
+              </div>
+              <div class="quiz-group">
+                \${selfQuizzes.map(q => \`
+                  <div class="quiz-container-item" style="margin-top: 12px;">
+                    <details class="quiz-details-accordion">
+                      <summary class="quiz-summary">
+                        <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
+                          ❓ <strong>\${escapeHtml(q.title)}</strong>
+                        </span>
+                        <span class="view-questions-badge">Show Questions &amp; Answers</span>
+                      </summary>
+                      <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                        \${q.contentHtml || \`
+                          <div class="quiz-notice">
+                            <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
+                          </div>
+                        \`}
+                      </div>
+                    </details>
+                  </div>
+                \`).join('')}
+              </div>
+            </section>
+          \`;
+        }
 
-      // Assessment Section (formerly Graded Quizzes / Assessments)
-      if (assessmentQuizzes.length > 0) {
-        html += \`
-          <section class="section-card">
-            <div class="section-card-header">
-              <span class="tag tag-quiz">Assessment</span>
-              <h2>Assessment Section</h2>
-            </div>
-            <div class="quiz-group">
-              \${assessmentQuizzes.map(q => \`
-                <div class="quiz-container-item" style="margin-top: 12px;">
-                  <details class="quiz-details-accordion">
-                    <summary class="quiz-summary">
-                      <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
-                        ❓ <strong>\${escapeHtml(q.title)}</strong>
-                      </span>
-                      <span class="view-questions-badge">Show Questions &amp; Answers</span>
-                    </summary>
-                    <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
-                      \${q.contentHtml || \`
-                        <div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
-                          <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
-                        </div>
-                      \`}
-                    </div>
-                  </details>
-                </div>
-              \`).join('')}
-            </div>
-          </section>
-        \`;
+        // Assessment Section
+        if (assessmentQuizzes.length > 0) {
+          html += \`
+            <section class="section-card">
+              <div class="section-card-header">
+                <span class="tag tag-quiz">Assessment</span>
+                <h2>Assessment Section</h2>
+              </div>
+              <div class="quiz-group">
+                \${assessmentQuizzes.map(q => \`
+                  <div class="quiz-container-item" style="margin-top: 12px;">
+                    <details class="quiz-details-accordion">
+                      <summary class="quiz-summary">
+                        <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
+                          ❓ <strong>\${escapeHtml(q.title)}</strong>
+                        </span>
+                        <span class="view-questions-badge">Show Questions &amp; Answers</span>
+                      </summary>
+                      <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                        \${q.contentHtml || \`
+                          <div class="quiz-notice">
+                            <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
+                          </div>
+                        \`}
+                      </div>
+                    </details>
+                  </div>
+                \`).join('')}
+              </div>
+            </section>
+          \`;
+        }
       }
 
       // Conclusion Section
@@ -789,7 +804,7 @@ const HTMLBuilder = {
         html += \`
           <section class="section-card">
             <div class="section-card-header">
-              <h2>📎 Attachments & Files</h2>
+              <h2>📎 Attachments &amp; Files</h2>
             </div>
             <div class="attachment-list">
               \${unit.attachments.map(att => \`

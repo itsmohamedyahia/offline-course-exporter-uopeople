@@ -174,8 +174,9 @@ const MarkdownBuilder = {
     return md;
   },
 
-  buildMarkdownZip(courseInfo, units) {
+  buildMarkdownZip(courseInfo, units, exportScope = 'full') {
     const files = [];
+    const isShareable = exportScope === 'shareable';
 
     // Helper: Add markdown file if it has content
     const addFile = (folderName, fileName, content) => {
@@ -186,12 +187,19 @@ const MarkdownBuilder = {
     };
 
     // Generate README.md at the root
-    let readmeContent = `# ${courseInfo.name}\n\n`;
+    let readmeContent = `# ${courseInfo.name}${isShareable ? ' - Study Guide & Reading List' : ''}\n\n`;
     readmeContent += `Exported from Brightspace on ${new Date().toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
     })}\n\n`;
+
+    if (isShareable) {
+      readmeContent += `> **Export Mode: Shareable Study Guide (Peer-Safe)**\n`;
+      readmeContent += `> This package contains the course syllabus, unit overviews, and reading assignment references intended for preparation and study.\n`;
+      readmeContent += `> Graded discussion questions, written assignment prompts, and assessment quizzes are excluded in compliance with academic policies.\n\n`;
+    }
+
     readmeContent += `## Course Structure\n\n`;
 
     units.forEach((unit, unitIdx) => {
@@ -247,105 +255,108 @@ const MarkdownBuilder = {
         addFile(folderName, '02_Readings.md', md);
       }
 
-      // 3. Discussion -> 03_Discussions.md
-      if (unit.discussions && unit.discussions.length > 0) {
-        let md = `# ${unit.title} - Discussion Forum\n\n`;
-        unit.discussions.forEach(d => {
-          md += `## ${d.title}\n\n`;
-          if (d.url) {
-            md += `*Brightspace Link: [Open Discussion Thread ↗](${d.url})*\n\n`;
-          }
-          if (d.contentHtml) {
-            md += `${this.htmlToMarkdown(d.contentHtml)}\n\n`;
-          }
-          md += `---\n\n`;
+      // ONLY in Full Archive mode: Include graded prompts & quizzes
+      if (!isShareable) {
+        // 3. Discussion -> 03_Discussions.md
+        if (unit.discussions && unit.discussions.length > 0) {
+          let md = `# ${unit.title} - Discussion Forum\n\n`;
+          unit.discussions.forEach(d => {
+            md += `## ${d.title}\n\n`;
+            if (d.url) {
+              md += `*Brightspace Link: [Open Discussion Thread ↗](${d.url})*\n\n`;
+            }
+            if (d.contentHtml) {
+              md += `${this.htmlToMarkdown(d.contentHtml)}\n\n`;
+            }
+            md += `---\n\n`;
+          });
+          addFile(folderName, '03_Discussions.md', md);
+        }
+
+        // 4. Assignments -> 04_Assignments.md
+        if (unit.assignments && unit.assignments.length > 0) {
+          let md = `# ${unit.title} - Assignment Activities\n\n`;
+          unit.assignments.forEach(a => {
+            md += `## ${a.title}\n\n`;
+            if (a.url) {
+              md += `*Brightspace Link: [Open Assignment Submission ↗](${a.url})*\n\n`;
+            }
+            if (a.contentHtml) {
+              md += `${this.htmlToMarkdown(a.contentHtml)}\n\n`;
+            }
+            md += `---\n\n`;
+          });
+          addFile(folderName, '04_Assignments.md', md);
+        }
+
+        // Quizzes Sub-sections
+        const allQuizzes = unit.quizzes || [];
+        const knowledgeChecks = allQuizzes.filter(q => q.title.toLowerCase().includes('knowledge check'));
+        const selfQuizzes = allQuizzes.filter(q => {
+          const lower = q.title.toLowerCase();
+          return (lower.includes('self-quiz') || lower.includes('self quiz')) && !lower.includes('knowledge check');
         });
-        addFile(folderName, '03_Discussions.md', md);
+        const assessmentQuizzes = allQuizzes.filter(q => {
+          const lower = q.title.toLowerCase();
+          return !lower.includes('knowledge check') && !lower.includes('self-quiz') && !lower.includes('self quiz');
+        });
+
+        // 5. Knowledge Checks -> 05_Knowledge_Checks.md
+        if (knowledgeChecks.length > 0) {
+          let md = `# ${unit.title} - Knowledge Checks\n\n`;
+          knowledgeChecks.forEach(q => {
+            md += `## ${q.title}\n\n`;
+            if (q.url) {
+              md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
+            }
+            if (q.contentHtml) {
+              md += `${this.htmlToMarkdown(q.contentHtml)}\n\n`;
+            } else {
+              md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
+            }
+            md += `---\n\n`;
+          });
+          addFile(folderName, '05_Knowledge_Checks.md', md);
+        }
+
+        // 6. Self-Quizzes -> 06_Self_Quizzes.md
+        if (selfQuizzes.length > 0) {
+          let md = `# ${unit.title} - Self-Quizzes\n\n`;
+          selfQuizzes.forEach(q => {
+            md += `## ${q.title}\n\n`;
+            if (q.url) {
+              md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
+            }
+            if (q.contentHtml) {
+              md += `${this.htmlToMarkdown(q.contentHtml)}\n\n`;
+            } else {
+              md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
+            }
+            md += `---\n\n`;
+          });
+          addFile(folderName, '06_Self_Quizzes.md', md);
+        }
+
+        // 7. Assessments -> 07_Assessments.md
+        if (assessmentQuizzes.length > 0) {
+          let md = `# ${unit.title} - Assessments\n\n`;
+          assessmentQuizzes.forEach(q => {
+            md += `## ${q.title}\n\n`;
+            if (q.url) {
+              md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
+            }
+            if (q.contentHtml) {
+              md += `${this.htmlToMarkdown(q.contentHtml)}\n\n`;
+            } else {
+              md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
+            }
+            md += `---\n\n`;
+          });
+          addFile(folderName, '07_Assessments.md', md);
+        }
       }
 
-      // 4. Assignments -> 04_Assignments.md
-      if (unit.assignments && unit.assignments.length > 0) {
-        let md = `# ${unit.title} - Assignment Activities\n\n`;
-        unit.assignments.forEach(a => {
-          md += `## ${a.title}\n\n`;
-          if (a.url) {
-            md += `*Brightspace Link: [Open Assignment Submission ↗](${a.url})*\n\n`;
-          }
-          if (a.contentHtml) {
-            md += `${this.htmlToMarkdown(a.contentHtml)}\n\n`;
-          }
-          md += `---\n\n`;
-        });
-        addFile(folderName, '04_Assignments.md', md);
-      }
-
-      // Quizzes Sub-sections
-      const allQuizzes = unit.quizzes || [];
-      const knowledgeChecks = allQuizzes.filter(q => q.title.toLowerCase().includes('knowledge check'));
-      const selfQuizzes = allQuizzes.filter(q => {
-        const lower = q.title.toLowerCase();
-        return (lower.includes('self-quiz') || lower.includes('self quiz')) && !lower.includes('knowledge check');
-      });
-      const assessmentQuizzes = allQuizzes.filter(q => {
-        const lower = q.title.toLowerCase();
-        return !lower.includes('knowledge check') && !lower.includes('self-quiz') && !lower.includes('self quiz');
-      });
-
-      // 5. Knowledge Checks -> 05_Knowledge_Checks.md
-      if (knowledgeChecks.length > 0) {
-        let md = `# ${unit.title} - Knowledge Checks\n\n`;
-        knowledgeChecks.forEach(q => {
-          md += `## ${q.title}\n\n`;
-          if (q.url) {
-            md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
-          }
-          if (q.contentHtml) {
-            md += `${this.htmlToMarkdown(q.contentHtml)}\n\n`;
-          } else {
-            md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
-          }
-          md += `---\n\n`;
-        });
-        addFile(folderName, '05_Knowledge_Checks.md', md);
-      }
-
-      // 6. Self-Quizzes -> 06_Self_Quizzes.md
-      if (selfQuizzes.length > 0) {
-        let md = `# ${unit.title} - Self-Quizzes\n\n`;
-        selfQuizzes.forEach(q => {
-          md += `## ${q.title}\n\n`;
-          if (q.url) {
-            md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
-          }
-          if (q.contentHtml) {
-            md += `${this.htmlToMarkdown(q.contentHtml)}\n\n`;
-          } else {
-            md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
-          }
-          md += `---\n\n`;
-        });
-        addFile(folderName, '06_Self_Quizzes.md', md);
-      }
-
-      // 7. Assessments -> 07_Assessments.md
-      if (assessmentQuizzes.length > 0) {
-        let md = `# ${unit.title} - Assessments\n\n`;
-        assessmentQuizzes.forEach(q => {
-          md += `## ${q.title}\n\n`;
-          if (q.url) {
-            md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
-          }
-          if (q.contentHtml) {
-            md += `${this.htmlToMarkdown(q.contentHtml)}\n\n`;
-          } else {
-            md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
-          }
-          md += `---\n\n`;
-        });
-        addFile(folderName, '07_Assessments.md', md);
-      }
-
-      // 8. Conclusion -> 08_Conclusion.md
+      // 8. Conclusion -> 08_Conclusion.md (Included in both)
       const conclusionTopics = (unit.topics || []).filter(t => {
         const title = t.title.toLowerCase();
         return title.includes('conclusion');

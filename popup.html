@@ -29,14 +29,44 @@
         <p class="course-meta" id="course-meta">Navigate to any UoPeople course page</p>
       </div>
 
+      <!-- Export Scope Selector -->
+      <div class="scope-container">
+        <span class="scope-title-label">Choose Export Mode:</span>
+        <div class="scope-options">
+          <label class="scope-radio-card" id="scope-card-full">
+            <input type="radio" name="export-scope" value="full" checked>
+            <div class="scope-radio-content">
+              <div class="scope-radio-header">
+                <span class="scope-icon">🔒</span>
+                <strong>Full Archive</strong>
+                <span class="scope-badge badge-personal">Personal</span>
+              </div>
+              <p class="scope-desc">Includes syllabus, readings, discussions, assignments &amp; quizzes for your personal offline backup.</p>
+            </div>
+          </label>
+
+          <label class="scope-radio-card" id="scope-card-shareable">
+            <input type="radio" name="export-scope" value="shareable">
+            <div class="scope-radio-content">
+              <div class="scope-radio-header">
+                <span class="scope-icon">👥</span>
+                <strong>Study Guide</strong>
+                <span class="scope-badge badge-safe">Peer-Safe</span>
+              </div>
+              <p class="scope-desc">Syllabus &amp; reading lists only. Excludes graded prompts &amp; quizzes — 100% compliant to share with peers.</p>
+            </div>
+          </label>
+        </div>
+      </div>
+
       <!-- Settings / Options -->
       <div class="options-group">
         <label class="toggle-option">
           <input type="checkbox" id="opt-download-assets" checked>
           <span class="toggle-slider"></span>
           <span class="toggle-label">
-            <strong>Download Attachments & PDFs</strong>
-            <small>Saves PDFs to an <code>assets/</code> subfolder linked inside the HTML site</small>
+            <strong>Download Attachments &amp; PDFs</strong>
+            <small>Saves PDFs to an <code>assets/</code> subfolder linked inside the export</small>
           </span>
         </label>
       </div>
