@@ -609,6 +609,11 @@ const HTMLBuilder = {
               <span class="tag tag-reading">Reading</span>
               <h2>Reading Assignments</h2>
             </div>
+            \${isShareable ? \`
+              <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 10px 14px; font-size: 12px; color: var(--text-main); margin-bottom: 8px;">
+                💡 <strong>Accessing Textbooks:</strong> For proprietary or LIRN-hosted books, use your official student login to search the UoPeople Library portal with the citations provided below. Open Educational Resources (OER) and video resources can be accessed directly online.
+              </div>
+            \` : ''}
             <div class="topic-list">
               \${unit.readings.map(r => \`
                 <div class="topic-item">

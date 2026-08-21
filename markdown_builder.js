@@ -242,6 +242,10 @@ const MarkdownBuilder = {
       // 2. Reading -> 02_Readings.md
       if (unit.readings && unit.readings.length > 0) {
         let md = `# ${unit.title} - Reading Assignments\n\n`;
+        if (isShareable) {
+          md += `> [!TIP]\n`;
+          md += `> **Accessing Required Textbooks:** For proprietary textbooks and articles (e.g. LIRN library materials), please log into the official UoPeople Library portal and search for the titles using the citations listed below. Open Educational Resources (OER) and open-access links can be accessed directly online.\n\n---\n\n`;
+        }
         unit.readings.forEach(r => {
           md += `## ${r.title}\n\n`;
           if (r.url) {

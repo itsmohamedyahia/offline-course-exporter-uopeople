@@ -11,9 +11,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   const progressDetail = document.getElementById('progress-detail');
   const resultMessage = document.getElementById('result-message');
   const optDownloadAssets = document.getElementById('opt-download-assets');
+  const copyrightWarningBox = document.getElementById('copyright-warning-box');
   const scopeRadios = document.querySelectorAll('input[name="export-scope"]');
 
   let activeOrgUnitId = null;
+
+  function updateWarningHighlight() {
+    const isShareable = getSelectedScope() === 'shareable';
+    if (copyrightWarningBox) {
+      if (isShareable) {
+        copyrightWarningBox.classList.add('highlight');
+      } else {
+        copyrightWarningBox.classList.remove('highlight');
+      }
+    }
+  }
 
   // Restore stored preferences
   if (chrome.storage && chrome.storage.local) {
@@ -25,6 +37,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const targetRadio = document.querySelector(`input[name="export-scope"][value="${res.exportScope}"]`);
         if (targetRadio) targetRadio.checked = true;
       }
+      updateWarningHighlight();
     });
   }
 
@@ -37,6 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   scopeRadios.forEach(radio => {
     radio.addEventListener('change', () => {
+      updateWarningHighlight();
       if (chrome.storage && chrome.storage.local) {
         chrome.storage.local.set({ exportScope: radio.value });
       }

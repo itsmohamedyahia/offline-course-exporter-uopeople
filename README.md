@@ -13,7 +13,10 @@ A modern Manifest V3 browser extension designed for University of the People stu
 > **Academic Integrity & Sharing Guidelines:**
 > - **Personal Full Archive Mode:** Backs up all course components (syllabus, readings, discussions, assignments, self-quizzes) for your own personal revision and study.
 > - **Peer-Safe Study Guide Mode:** Exports only the syllabus, unit overviews, and reading assignment lists while automatically stripping all graded discussion prompts, written assignments, learning journals, and quiz question banks. This mode is 100% compliant with university policies to share with prospective students preparing for upcoming courses.
-> - **Redistribution Warning:** Never publicly re-host or commercially sell copyrighted third-party textbook PDFs or university course assets.
+
+> [!WARNING]
+> **⚠️ Copyright Advisory for Sharing (Non-OER Textbooks):**
+> If your course uses **proprietary, copyrighted textbooks or non-OER reading PDFs**, you should **UNCHECK "Download Attachments & PDFs"** before exporting for a peer. This ensures the exported study guide contains only the syllabus citations, reading guides, chapter pointers, and official UoPeople LIRN library lookup instructions, without illegally redistributing copyrighted PDF files. Students can then access the books legally via their own university library portal.
 
 ---
 
@@ -62,6 +65,7 @@ A modern Manifest V3 browser extension designed for University of the People stu
 5. Choose your output format:
    - **Export Course Website**: Generates a self-contained offline website (`index.html` + `assets/`).
    - **Export Markdown Folders**: Generates an organized ZIP archive containing modular Markdown files by unit.
+   - *(Optional)* **Toggle Attachments:** Leave "Download Attachments & PDFs" **unchecked** if you wish to export a pure, lightweight text-and-link guide without downloading any proprietary PDF files.
 6. The archive will download automatically to your default browser Downloads directory.
 
 ---
