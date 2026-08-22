@@ -42,8 +42,12 @@ $iconsSrc = Join-Path $projectRoot "icons"
 $iconsDst = Join-Path $tempDir "icons"
 Copy-Item -Path $iconsSrc -Destination $iconsDst -Recurse
 
+$manifestPath = Join-Path $projectRoot "manifest.json"
+$manifestJson = Get-Content $manifestPath -Raw | ConvertFrom-Json
+$version = $manifestJson.version
+
 # Create POSIX-compliant zip archive with forward slashes (required by Firefox addons-linter)
-$zipOutput = Join-Path $distDir "uopeople-course-exporter-v1.0.0.zip"
+$zipOutput = Join-Path $distDir "uopeople-course-exporter-v$version.zip"
 if (Test-Path $zipOutput) {
     Remove-Item -Force $zipOutput
 }

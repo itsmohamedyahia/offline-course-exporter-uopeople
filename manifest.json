@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Offline Course Exporter for UoPeople",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Export UoPeople Brightspace courses into offline interactive HTML study packages or Markdown notes with attachments.",
   "browser_specific_settings": {
     "gecko": {
       "id": "uopeople-course-exporter@mohamed-yahia.dev",
-      "strict_min_version": "140.0",
+      "strict_min_version": "121.0",
       "data_collection_permissions": {
         "required": ["none"]
       }
@@ -36,7 +36,6 @@
     "128": "icons/icon128.png"
   },
   "background": {
-    "scripts": ["background.js"],
     "service_worker": "background.js"
   },
   "content_scripts": [

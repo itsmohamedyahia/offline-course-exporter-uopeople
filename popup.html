@@ -3,215 +3,185 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Offline Course Exporter for UoPeople</title>
+  <title>Course Exporter for UoPeople</title>
   <link rel="stylesheet" href="popup.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div class="ambient-glow"></div>
   <div class="app-container">
     <!-- Header -->
     <header class="app-header">
       <div class="brand">
-        <div class="brand-badge">
-          <img src="icons/icon48.png" class="brand-logo-img" alt="UoP Exporter">
-        </div>
-        <div class="brand-text">
-          <div class="brand-title-row">
+        <img src="icons/icon48.png" class="brand-logo" alt="UoP Exporter">
+        <div class="brand-info">
+          <div class="brand-title">
             <h1>Course Exporter</h1>
-            <span class="version-tag">v1.0</span>
+            <span class="version-tag">v1.1</span>
           </div>
-          <span class="subtext">Offline Study Package for Brightspace</span>
+          <p class="brand-subtitle">UoPeople Brightspace to Offline</p>
         </div>
+      </div>
+      <div class="header-links">
+        <a href="mailto:reachmyk@gmail.com?subject=%5BHelp%5D%20UoPeople%20Course%20Exporter" target="_blank" rel="noopener noreferrer" class="icon-link" title="Help & Feedback (reachmyk@gmail.com)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </a>
+        <a href="https://github.com/itsmohamedyahia/offline-course-exporter-uopeople" target="_blank" rel="noopener noreferrer" class="icon-link" title="GitHub Repository & Star">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+          </svg>
+        </a>
       </div>
     </header>
 
     <main class="app-body">
       <!-- Course Detector Card -->
-      <div class="card course-card" id="course-card">
-        <div class="course-card-top">
-          <div class="status-indicator searching" id="status-badge">Detecting...</div>
-        </div>
-        <div class="course-info-group">
-          <div class="course-icon-wrap">
-            <svg class="course-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <div class="course-card" id="course-card">
+        <div class="course-card-header">
+          <div class="course-icon-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
               <path d="M6 6h10"></path>
               <path d="M6 10h10"></path>
             </svg>
           </div>
-          <div class="course-details">
-            <h2 id="course-title">Checking active Brightspace tab...</h2>
-            <p class="course-meta" id="course-meta">Navigate to any UoPeople course page</p>
-          </div>
+          <span class="course-label">Course Target</span>
+          <span class="status-indicator searching" id="status-badge">Detecting...</span>
+        </div>
+        <div class="course-details">
+          <h2 id="course-title">Checking active Brightspace tab...</h2>
+          <p class="course-meta" id="course-meta">Open any UoPeople course page</p>
         </div>
       </div>
 
-      <!-- Export Scope Selector -->
-      <div class="scope-container">
-        <span class="section-label">Choose Export Mode</span>
-        <div class="scope-options">
-          <label class="scope-radio-card" id="scope-card-full">
+      <!-- Export Scope Selector (Segmented Control) -->
+      <div class="section-group">
+        <label class="section-heading">Export Mode</label>
+        <div class="segmented-control">
+          <label class="segment-option" id="scope-card-full">
             <input type="radio" name="export-scope" value="full" checked>
-            <div class="scope-radio-indicator"></div>
-            <div class="scope-radio-content">
-              <div class="scope-radio-header">
-                <div class="scope-title-wrap">
-                  <svg class="scope-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                  </svg>
-                  <strong>Full Archive</strong>
-                </div>
-                <span class="scope-badge badge-personal">Personal</span>
-              </div>
-              <p class="scope-desc">Includes syllabus, readings, discussions, assignments &amp; quizzes for your personal offline backup.</p>
-            </div>
+            <span class="segment-pill">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+              <span>Full Archive</span>
+            </span>
           </label>
-
-          <label class="scope-radio-card" id="scope-card-shareable">
+          <label class="segment-option" id="scope-card-shareable">
             <input type="radio" name="export-scope" value="shareable">
-            <div class="scope-radio-indicator"></div>
-            <div class="scope-radio-content">
-              <div class="scope-radio-header">
-                <div class="scope-title-wrap">
-                  <svg class="scope-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                  </svg>
-                  <strong>Study Guide</strong>
-                </div>
-                <span class="scope-badge badge-safe">Peer-Safe</span>
-              </div>
-              <p class="scope-desc">Syllabus &amp; reading lists only. Excludes graded prompts &amp; quizzes — 100% compliant to share with peers.</p>
-            </div>
+            <span class="segment-pill">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+              <span>Study Guide (Peer-Safe)</span>
+            </span>
           </label>
         </div>
       </div>
 
       <!-- Settings / Options -->
-      <div class="options-group">
-        <label class="toggle-option">
-          <input type="checkbox" id="opt-download-assets" checked>
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">
+      <div class="options-container">
+        <label class="toggle-card">
+          <div class="toggle-info">
             <span class="toggle-title">Download Attachments &amp; PDFs</span>
-            <small>Saves PDFs to an <code>assets/</code> subfolder linked inside the export</small>
-          </span>
+            <span class="toggle-subtitle">Saves course files locally into <code>assets/</code></span>
+          </div>
+          <input type="checkbox" id="opt-download-assets" checked>
+          <span class="toggle-switch"></span>
         </label>
 
         <!-- Copyright & Non-OER Warning Notice -->
         <div class="copyright-warning-box" id="copyright-warning-box">
-          <div class="warning-icon-wrap">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
-              <line x1="12" y1="9" x2="12" y2="13"></line>
-              <line x1="12" y1="17" x2="12.01" y2="17"></line>
-            </svg>
-          </div>
-          <p><strong>Copyright Notice for Sharing:</strong> If this course uses proprietary (non-OER) textbooks, uncheck attachment downloads above so you only share reading lists and LIRN links without distributing copyrighted files.</p>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <p><strong>Peer-Safe Mode:</strong> Uncheck attachments if course uses proprietary non-OER readings to share compliant study guides.</p>
         </div>
       </div>
 
       <!-- Progress Section -->
-      <div class="progress-section hidden" id="progress-section">
-        <div class="progress-header">
-          <span class="progress-label" id="progress-label">Extracting course data...</span>
-          <span class="progress-percent" id="progress-percent">0%</span>
+      <div class="progress-card hidden" id="progress-section">
+        <div class="progress-row">
+          <span class="progress-status-text" id="progress-detail">Preparing export...</span>
+          <span class="progress-percent-text" id="progress-percent">0%</span>
         </div>
-        <div class="progress-bar-track">
-          <div class="progress-bar-fill" id="progress-fill"></div>
+        <div class="progress-track">
+          <div class="progress-bar" id="progress-fill"></div>
         </div>
-        <p class="progress-status" id="progress-detail">Initializing Brightspace Valence API...</p>
       </div>
 
-      <!-- Primary Actions -->
-      <div class="actions">
+      <!-- Action Buttons -->
+      <div class="action-buttons">
         <button class="btn btn-primary" id="btn-export" disabled>
-          <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="7 10 12 15 17 10"/>
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
-          <span>Export as HTML Website</span>
+          <span>Export HTML Website (.zip)</span>
         </button>
         <button class="btn btn-secondary" id="btn-export-markdown" disabled>
-          <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
             <line x1="16" y1="13" x2="8" y2="13"></line>
             <line x1="16" y1="17" x2="8" y2="17"></line>
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
-          <span>Export as Markdown Notes (.md)</span>
+          <span>Export Markdown Notes (.zip)</span>
         </button>
       </div>
 
       <!-- Result / Success Banner -->
-      <div class="result-message hidden" id="result-message">
-        <div class="success-banner">
-          <div class="success-icon-wrap">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-              <polyline points="22 4 12 14.01 9 11.01"/>
+      <div class="result-box hidden" id="result-message">
+        <div class="success-header">
+          <div class="success-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
           </div>
-          <div class="success-text">
-            <strong>Course Export Complete!</strong>
-            <span>Check your downloads folder for the ZIP file.</span>
+          <div class="success-message">
+            <strong>Export Complete!</strong>
+            <span>Saved to your downloads folder.</span>
           </div>
         </div>
-
-        <!-- Appreciation & Feedback Banner -->
-        <div class="appreciation-card">
-          <div class="appreciation-header">
-            <span class="appreciation-title">💖 Enjoying this tool?</span>
-          </div>
-          <p class="appreciation-desc">Leave a ⭐ on GitHub &amp; a 5-star review on the Web Store to support future updates!</p>
-          <div class="appreciation-actions">
-            <a href="https://github.com/itsmohamedyahia/offline-course-exporter-uopeople" target="_blank" rel="noopener noreferrer" class="appreciation-btn btn-star">
-              ⭐ Star on GitHub
-            </a>
-            <a href="https://ko-fi.com/myahiakhidr" target="_blank" rel="noopener noreferrer" class="appreciation-btn btn-coffee">
-              ☕ Buy Me a Coffee
-            </a>
-          </div>
+        <div class="success-links">
+          <a href="https://github.com/itsmohamedyahia/offline-course-exporter-uopeople" target="_blank" rel="noopener noreferrer" class="success-link">
+            ⭐ Star on GitHub
+          </a>
+          <a href="https://ko-fi.com/myahiakhidr" target="_blank" rel="noopener noreferrer" class="success-link">
+            Donate
+          </a>
+          <a href="mailto:reachmyk@gmail.com?subject=%5BHelp%5D%20UoPeople%20Course%20Exporter" target="_blank" rel="noopener noreferrer" class="success-link">
+            Get Help
+          </a>
         </div>
       </div>
     </main>
 
     <!-- Footer -->
     <footer class="app-footer">
-      <!-- Quick Action Badges -->
-      <div class="footer-action-pills">
-        <a href="https://github.com/itsmohamedyahia/offline-course-exporter-uopeople" target="_blank" rel="noopener noreferrer" class="action-pill" title="Rate on Web Store / GitHub">
-          <span>🌟 Rate Tool</span>
-        </a>
-        <a href="https://github.com/itsmohamedyahia/offline-course-exporter-uopeople" target="_blank" rel="noopener noreferrer" class="action-pill" title="Source Code & Star">
-          <span>🐙 GitHub &amp; ⭐</span>
-        </a>
-        <a href="https://ko-fi.com/myahiakhidr" target="_blank" rel="noopener noreferrer" class="action-pill pill-coffee" title="Support the Developer">
-          <span>☕ Support</span>
-        </a>
-        <a href="https://www.linkedin.com/in/myahiakhidr/" target="_blank" rel="noopener noreferrer" class="action-pill" title="Connect on LinkedIn">
-          <span>💼 LinkedIn</span>
-        </a>
+      <div class="footer-links">
+        <a href="mailto:reachmyk@gmail.com?subject=%5BHelp%5D%20UoPeople%20Course%20Exporter" target="_blank" rel="noopener noreferrer">Help &amp; Feedback</a>
+        <span>•</span>
+        <a href="https://www.linkedin.com/in/myahiakhidr/" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        <span>•</span>
+        <a href="https://github.com/itsmohamedyahia/offline-course-exporter-uopeople" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <span>•</span>
+        <a href="https://ko-fi.com/myahiakhidr" target="_blank" rel="noopener noreferrer">Donate</a>
       </div>
-
-      <!-- Developer Credit -->
-      <div class="footer-credit">
-        Built with ❤️ by <strong>Mohamed Yahia</strong> • 
-        <a href="https://github.com/itsmohamedyahia" target="_blank" rel="noopener noreferrer">GitHub</a> • 
-        <a href="https://www.linkedin.com/in/myahiakhidr/" target="_blank" rel="noopener noreferrer">LinkedIn</a> • 
-        <a href="https://github.com/itsmohamedyahia/offline-course-exporter-uopeople" target="_blank" rel="noopener noreferrer">⭐ Star on GitHub</a>
-      </div>
-
-      <div class="footer-primary">Unofficial tool for personal offline study only.</div>
-      <div class="footer-secondary">Not affiliated with University of the People or D2L.</div>
+      <p class="footer-note">Unofficial tool for personal offline study only.</p>
     </footer>
   </div>
 
