@@ -2,7 +2,16 @@
   "manifest_version": 3,
   "name": "Offline Course Exporter for UoPeople",
   "version": "1.0.0",
-  "description": "Unofficial open-source study tool for University of the People students to export course materials into an offline website or Markdown files. Not affiliated with UoPeople or D2L.",
+  "description": "Export UoPeople Brightspace courses into offline interactive HTML study packages or Markdown notes with attachments.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "uopeople-course-exporter@mohamed-yahia.dev",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
   "permissions": [
     "activeTab",
     "scripting",
@@ -27,6 +36,7 @@
     "128": "icons/icon128.png"
   },
   "background": {
+    "scripts": ["background.js"],
     "service_worker": "background.js"
   },
   "content_scripts": [

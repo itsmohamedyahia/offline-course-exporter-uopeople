@@ -119,6 +119,18 @@ const MarkdownBuilder = {
       case 'div':
       case 'span':
         if (node.classList.contains('video-container')) {
+          const ytLink = node.querySelector('a[href*="youtube.com"], a[href*="youtu.be"]');
+          const videoId = node.getAttribute('data-video-id');
+          if (ytLink || videoId) {
+            const watchUrl = ytLink ? (ytLink.getAttribute('href') || '') : `https://www.youtube.com/watch?v=${videoId}`;
+            const id = videoId || (watchUrl.match(/(?:watch\?v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{11})/i) || [])[1];
+            let videoMd = '\n\n';
+            if (id) {
+              videoMd += `[![Watch on YouTube](https://img.youtube.com/vi/${id}/hqdefault.jpg)](${watchUrl})\n\n`;
+            }
+            videoMd += `[▶ Watch on YouTube ↗](${watchUrl})\n\n`;
+            return videoMd;
+          }
           const watchBtn = node.querySelector('.watch-on-youtube-btn');
           const iframe = node.querySelector('iframe');
           let videoMd = '\n\n';
@@ -402,6 +414,13 @@ const MarkdownBuilder = {
         addFile(folderName, '08_Conclusion.md', md);
       }
     });
+
+    readmeContent += `\n---\n\n`;
+    readmeContent += `### 💡 Support & Community Feedback\n\n`;
+    readmeContent += `- 🌟 **Enjoying this tool?** Leave a ⭐ on [GitHub](https://github.com/itsmohamedyahia/offline-course-exporter-uopeople) & a 5-star review on the Web Store!\n`;
+    readmeContent += `- ☕ **Support the Developer:** [Buy Me a Coffee / Ko-fi](https://ko-fi.com/myahiakhidr)\n`;
+    readmeContent += `- 💼 **Author:** Built with ❤️ by **Mohamed Yahia** • [GitHub](https://github.com/itsmohamedyahia) • [LinkedIn](https://www.linkedin.com/in/myahiakhidr/) • [⭐ Star on GitHub](https://github.com/itsmohamedyahia/offline-course-exporter-uopeople)\n\n`;
+    readmeContent += `*Unofficial open-source study tool for personal offline study. Not affiliated with University of the People or D2L.*\n`;
 
     files.push({
       name: 'README.md',

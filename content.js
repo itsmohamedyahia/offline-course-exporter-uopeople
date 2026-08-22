@@ -144,11 +144,15 @@
         }
       }
 
-      emitProgress(25, 'Extracting unit contents & quizzes...');
-      const units = await D2LApi.parseModules(tocData, { dropboxFolders, discussionTopics, rubricsMap, quizzesList, orgUnitId }, (progress, statusText) => {
-        emitProgress(progress, statusText || 'Extracting unit contents & quizzes...');
-        console.log(`Extraction progress: ${progress}% - ${statusText || ''}`);
-      });
+      emitProgress(25, exportScope === 'shareable' ? 'Extracting unit overviews & reading assignments...' : 'Extracting unit contents & quizzes...');
+      const units = await D2LApi.parseModules(
+        tocData,
+        { dropboxFolders, discussionTopics, rubricsMap, quizzesList, orgUnitId, exportScope },
+        (progress, statusText) => {
+          emitProgress(progress, statusText || (exportScope === 'shareable' ? 'Extracting unit overviews & reading assignments...' : 'Extracting unit contents & quizzes...'));
+          console.log(`Extraction progress: ${progress}% - ${statusText || ''}`);
+        }
+      );
 
       const exportedAt = new Date().toLocaleDateString('en-US', {
         year: 'numeric',

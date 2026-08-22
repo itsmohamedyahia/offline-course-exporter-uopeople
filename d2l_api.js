@@ -583,21 +583,36 @@ const D2LApi = {
           span.style.color = '#10b981';
           span.style.fontWeight = 'bold';
           span.style.marginLeft = '6px';
-          span.innerHTML = ' ✅ <small style="color:#10b981; font-weight:600;">Correct</small>';
+          span.textContent = ' ✅ ';
+          const sm = doc.createElement('small');
+          sm.style.color = '#10b981';
+          sm.style.fontWeight = '600';
+          sm.textContent = 'Correct';
+          span.appendChild(sm);
           img.parentNode.replaceChild(span, img);
         } else if (alt.includes('incorrect response') || alt === 'incorrect' || src.includes('incorrect')) {
           const span = doc.createElement('span');
           span.style.color = '#ef4444';
           span.style.fontWeight = 'bold';
           span.style.marginLeft = '6px';
-          span.innerHTML = ' ❌ <small style="color:#ef4444; font-weight:600;">Incorrect</small>';
+          span.textContent = ' ❌ ';
+          const sm = doc.createElement('small');
+          sm.style.color = '#ef4444';
+          sm.style.fontWeight = '600';
+          sm.textContent = 'Incorrect';
+          span.appendChild(sm);
           img.parentNode.replaceChild(span, img);
         } else if (alt.includes('selected') || alt.includes('your answer') || src.includes('selected')) {
           const span = doc.createElement('span');
           span.style.color = '#3b82f6';
           span.style.fontWeight = 'bold';
           span.style.marginLeft = '6px';
-          span.innerHTML = ' 👤 <small style="color:#3b82f6; font-weight:600;">Your Answer</small>';
+          span.textContent = ' 👤 ';
+          const sm = doc.createElement('small');
+          sm.style.color = '#3b82f6';
+          sm.style.fontWeight = '600';
+          sm.textContent = 'Your Answer';
+          span.appendChild(sm);
           img.parentNode.replaceChild(span, img);
         }
       });
@@ -610,14 +625,24 @@ const D2LApi = {
           span.style.color = '#10b981';
           span.style.fontWeight = 'bold';
           span.style.marginLeft = '6px';
-          span.innerHTML = ' ✅ <small style="color:#10b981; font-weight:600;">Correct</small>';
+          span.textContent = ' ✅ ';
+          const sm = doc.createElement('small');
+          sm.style.color = '#10b981';
+          sm.style.fontWeight = '600';
+          sm.textContent = 'Correct';
+          span.appendChild(sm);
           icon.parentNode.replaceChild(span, icon);
         } else if (iconName.includes('close') || iconName.includes('incorrect') || iconName.includes('fail')) {
           const span = doc.createElement('span');
           span.style.color = '#ef4444';
           span.style.fontWeight = 'bold';
           span.style.marginLeft = '6px';
-          span.innerHTML = ' ❌ <small style="color:#ef4444; font-weight:600;">Incorrect</small>';
+          span.textContent = ' ❌ ';
+          const sm = doc.createElement('small');
+          sm.style.color = '#ef4444';
+          sm.style.fontWeight = '600';
+          sm.textContent = 'Incorrect';
+          span.appendChild(sm);
           icon.parentNode.replaceChild(span, icon);
         }
       });
@@ -762,7 +787,7 @@ const D2LApi = {
         }
       });
 
-      // Refactor YouTube videos to fix Error 153 and add a direct link
+      // Refactor YouTube videos to replace broken Error 153 iframe with responsive YouTube card
       container.querySelectorAll('iframe').forEach(iframe => {
         let src = iframe.getAttribute('src') || '';
         if (src) {
@@ -770,27 +795,63 @@ const D2LApi = {
           const ytMatch = absUrl.match(/(?:youtube\.com\/(?:embed\/|watch\?v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
           if (ytMatch) {
             const videoId = ytMatch[1];
-            const newSrc = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0`;
-            iframe.setAttribute('src', newSrc);
-            iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
             
-            // Create a wrapper container for video player
-            const wrapper = doc.createElement('div');
-            wrapper.className = 'video-container';
+            // Create a custom responsive preview card for YouTube video (eliminates Error 153 under file://)
+            const card = doc.createElement('div');
+            card.className = 'video-container youtube-card';
+            card.setAttribute('data-video-id', videoId);
+
+            const aLink = doc.createElement('a');
+            aLink.href = `https://www.youtube.com/watch?v=${videoId}`;
+            aLink.target = '_blank';
+            aLink.rel = 'noopener';
+            aLink.className = 'youtube-card-link';
+
+            const thumbWrap = doc.createElement('div');
+            thumbWrap.className = 'youtube-thumb-wrap';
+
+            const thumbImg = doc.createElement('img');
+            thumbImg.src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+            thumbImg.alt = 'Watch Video on YouTube';
+            thumbImg.className = 'youtube-thumb-img';
+            thumbImg.loading = 'lazy';
+
+            const playBtn = doc.createElement('div');
+            playBtn.className = 'youtube-play-btn';
+            playBtn.textContent = '▶';
+
+            thumbWrap.appendChild(thumbImg);
+            thumbWrap.appendChild(playBtn);
+
+            const cardBar = doc.createElement('div');
+            cardBar.className = 'youtube-card-bar';
+
+            const cardInfo = doc.createElement('div');
+            cardInfo.className = 'youtube-card-info';
+
+            const cardTitle = doc.createElement('span');
+            cardTitle.className = 'youtube-card-title';
+            cardTitle.textContent = '▶ Watch Video on YouTube ↗';
+
+            const cardSub = doc.createElement('span');
+            cardSub.className = 'youtube-card-sub';
+            cardSub.textContent = 'Click to open and watch on YouTube';
+
+            cardInfo.appendChild(cardTitle);
+            cardInfo.appendChild(cardSub);
+
+            const watchBtn = doc.createElement('span');
+            watchBtn.className = 'watch-on-youtube-btn';
+            watchBtn.textContent = 'Watch on YouTube';
+
+            cardBar.appendChild(cardInfo);
+            cardBar.appendChild(watchBtn);
+
+            aLink.appendChild(thumbWrap);
+            aLink.appendChild(cardBar);
+            card.appendChild(aLink);
             
-            // Replace iframe with the wrapper containing both the iframe and the button
-            iframe.parentNode.insertBefore(wrapper, iframe);
-            wrapper.appendChild(iframe);
-            
-            const btnContainer = doc.createElement('div');
-            btnContainer.style.marginTop = '8px';
-            btnContainer.style.textAlign = 'center';
-            btnContainer.innerHTML = `
-              <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" class="watch-on-youtube-btn">
-                ▶ Watch on YouTube ↗
-              </a>
-            `;
-            wrapper.appendChild(btnContainer);
+            iframe.parentNode.replaceChild(card, iframe);
           }
         }
       });
@@ -823,7 +884,8 @@ const D2LApi = {
       onProgress = extraData;
       extraData = {};
     }
-    const { dropboxFolders = [], discussionTopics = [], rubricsMap = {}, quizzesList = [], orgUnitId = null } = extraData;
+    const { dropboxFolders = [], discussionTopics = [], rubricsMap = {}, quizzesList = [], orgUnitId = null, exportScope = 'full' } = extraData;
+    const isShareable = exportScope === 'shareable';
     if (!tocData || !tocData.Modules) return [];
 
     const rawTopicsToFetch = [];
@@ -883,6 +945,17 @@ const D2LApi = {
           }
           const topicUrl = this.toAbsoluteUrl(topic.Url || '');
           const topicType = topic.TypeIdentifier || topic.TopicType;
+          const lowerTopicTitle = topicTitle.toLowerCase();
+
+          const isDiscussion = lowerTopicTitle.includes('discussion') || lowerTopicTitle.includes('forum') || topicType === 5;
+          const isAssignment = lowerTopicTitle.includes('written assignment') || (lowerTopicTitle.includes('assignment') && !lowerTopicTitle.includes('reading')) || topicType === 7;
+          const isQuiz = lowerTopicTitle.includes('quiz') || lowerTopicTitle.includes('exam') || lowerTopicTitle.includes('test') || lowerTopicTitle.includes('knowledge check') || topicType === 6;
+          const isReading = lowerTopicTitle.includes('reading assignment') || lowerTopicTitle.includes('reading') || lowerTopicTitle.includes('textbook');
+
+          // In Shareable Study Guide mode, skip all graded discussions, assignments, and quizzes
+          if (isShareable && (isDiscussion || isAssignment || isQuiz)) {
+            continue;
+          }
 
           const topicItem = {
             id: topic.Identifier,
@@ -896,8 +969,7 @@ const D2LApi = {
           unitObj.topics.push(topicItem);
           rawTopicsToFetch.push({ item: topicItem, unitObj: unitObj });
 
-          const lowerTitle = topicTitle.toLowerCase();
-          if (lowerTitle.includes('discussion') || lowerTitle.includes('forum') || topicType === 5) {
+          if (isDiscussion) {
             unitObj.discussions.push(topicItem);
             
             // Match discussion topic
@@ -923,7 +995,7 @@ const D2LApi = {
               }
               topicItem.contentHtml = processed;
             }
-          } else if (lowerTitle.includes('written assignment') || (lowerTitle.includes('assignment') && !lowerTitle.includes('reading')) || topicType === 7) {
+          } else if (isAssignment) {
             unitObj.assignments.push(topicItem);
             
             // Match dropbox folder
@@ -955,9 +1027,9 @@ const D2LApi = {
               }
               topicItem.contentHtml = processed;
             }
-          } else if (lowerTitle.includes('reading assignment') || lowerTitle.includes('reading') || lowerTitle.includes('textbook')) {
+          } else if (isReading) {
             unitObj.readings.push(topicItem);
-          } else if (lowerTitle.includes('quiz') || lowerTitle.includes('exam') || lowerTitle.includes('test') || lowerTitle.includes('knowledge check') || topicType === 6) {
+          } else if (isQuiz) {
             unitObj.quizzes.push(topicItem);
           }
 

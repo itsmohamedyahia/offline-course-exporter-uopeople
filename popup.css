@@ -731,24 +731,157 @@ body {
   color: #a7f3d0;
 }
 
+/* Appreciation & Support Card */
+.appreciation-card {
+  margin-top: 10px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.appreciation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.appreciation-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.appreciation-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.appreciation-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.appreciation-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.btn-star {
+  background: rgba(234, 179, 8, 0.15);
+  color: #fde047;
+  border: 1px solid rgba(234, 179, 8, 0.35);
+}
+
+.btn-star:hover {
+  background: rgba(234, 179, 8, 0.28);
+  color: #fff;
+}
+
+.btn-coffee {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.btn-coffee:hover {
+  background: rgba(239, 68, 68, 0.28);
+  color: #fff;
+}
+
 /* Footer */
 .app-footer {
   text-align: center;
   border-top: 1px solid var(--border-color);
-  padding-top: 10px;
+  padding-top: 12px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
 }
 
-.footer-primary {
+/* Footer Action Pills */
+.footer-action-pills {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 3px 8px;
   font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.action-pill:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--border-color-hover);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.pill-coffee:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+/* Developer Credit Line */
+.footer-credit {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.footer-credit strong {
   color: var(--text-secondary);
 }
 
+.footer-credit a {
+  color: var(--accent-light);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.footer-credit a:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.footer-primary {
+  font-size: 10px;
+  color: var(--text-secondary);
+  opacity: 0.9;
+}
+
 .footer-secondary {
-  font-size: 9px;
+  font-size: 8.5px;
   color: var(--text-muted);
+  opacity: 0.8;
 }
 
 .hidden {
