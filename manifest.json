@@ -19,7 +19,8 @@
     "storage"
   ],
   "host_permissions": [
-    "https://learn.uopeople.edu/*"
+    "https://learn.uopeople.edu/*",
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",

@@ -4,7 +4,7 @@
  */
 const HTMLBuilder = {
   buildOfflineSite(courseData) {
-    const { courseInfo, units, exportedAt, exportScope = 'full' } = courseData;
+    const { courseInfo, units, exportedAt, exportScope = 'full', downloadAssets = true } = courseData;
     const isShareable = exportScope === 'shareable';
 
     const escapeHtml = (str) => {
@@ -721,6 +721,45 @@ const HTMLBuilder = {
       flex-wrap: wrap;
       gap: 10px;
     }
+    .attachment-item-card {
+      display: inline-flex;
+      align-items: center;
+      background: var(--bg-card-hover);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+    .attachment-item-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+    .attachment-item-card .attachment-btn {
+      border: none;
+      background: transparent;
+      border-radius: 0;
+      cursor: pointer;
+      padding: 8px 12px;
+    }
+    .attachment-item-card .attachment-btn:hover {
+      background: var(--accent-soft);
+    }
+    .attachment-open-tab-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-left: 1px solid var(--border-color);
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .attachment-open-tab-btn:hover {
+      background: var(--accent);
+      color: #ffffff;
+    }
     .attachment-btn {
       display: inline-flex;
       align-items: center;
@@ -733,11 +772,129 @@ const HTMLBuilder = {
       text-decoration: none;
       font-size: 13px;
       font-weight: 500;
-      transition: background 0.2s;
+      transition: background 0.2s, border-color 0.2s;
     }
     .attachment-btn:hover {
       background: var(--accent-soft);
       border-color: var(--accent);
+    }
+
+    /* Document Preview Modal */
+    .doc-modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .doc-modal-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .doc-modal-window {
+      width: 92vw;
+      height: 92vh;
+      max-width: 1300px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      transform: scale(0.96);
+      transition: transform 0.2s ease;
+    }
+    .doc-modal-backdrop.open .doc-modal-window {
+      transform: scale(1);
+    }
+    .doc-modal-header {
+      padding: 12px 18px;
+      background: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .doc-modal-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+    }
+    .doc-modal-icon {
+      font-size: 16px;
+    }
+    .doc-modal-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .doc-modal-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .doc-modal-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.15s ease, color 0.15s ease;
+      cursor: pointer;
+    }
+    .doc-modal-btn:hover {
+      background: var(--accent);
+      color: #ffffff;
+    }
+    .doc-modal-close {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      font-size: 16px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      line-height: 1;
+      transition: color 0.15s ease, background 0.15s ease;
+    }
+    .doc-modal-close:hover {
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.1);
+    }
+    .doc-modal-body {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      background: #525659;
+      position: relative;
+    }
+    .doc-modal-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
     }
 
     .quiz-notice {
@@ -904,9 +1061,34 @@ const HTMLBuilder = {
 
   <button class="floating-back-to-top" id="back-to-top-btn" title="Back to top" aria-label="Back to top">↑</button>
 
+  <!-- PDF & Document Reader Modal -->
+  <div class="doc-modal-backdrop" id="doc-modal" aria-hidden="true">
+    <div class="doc-modal-window">
+      <div class="doc-modal-header">
+        <div class="doc-modal-title-wrap">
+          <span class="doc-modal-icon">📄</span>
+          <span class="doc-modal-title" id="doc-modal-filename">Document Viewer</span>
+        </div>
+        <div class="doc-modal-actions">
+          <a id="doc-modal-open-tab" href="#" target="_blank" rel="noopener noreferrer" class="doc-modal-btn" title="Open in dedicated browser tab">
+            ↗ Open in New Tab
+          </a>
+          <a id="doc-modal-download" href="#" download class="doc-modal-btn" title="Save file to disk">
+            ⬇ Save File
+          </a>
+          <button class="doc-modal-close" id="doc-modal-close-btn" title="Close viewer (ESC)">✕</button>
+        </div>
+      </div>
+      <div class="doc-modal-body">
+        <iframe id="doc-modal-iframe" src="" class="doc-modal-frame"></iframe>
+      </div>
+    </div>
+  </div>
+
   <script>
     const units = ${unitsJson};
     const isShareable = ${isShareable};
+    const downloadAssets = ${Boolean(downloadAssets)};
     let activeUnitIndex = 0;
     let currentScrollSpyObserver = null;
 
@@ -987,7 +1169,12 @@ const HTMLBuilder = {
         sections.push({ id: 'sec-conclusion', label: 'Conclusion', icon: '🏁' });
       }
       if (unit.attachments && unit.attachments.length > 0) {
-        sections.push({ id: 'sec-attachments', label: 'Attachments', icon: '📎', count: unit.attachments.length });
+        sections.push({ 
+          id: 'sec-attachments', 
+          label: downloadAssets ? 'Attachments' : 'Online Resources', 
+          icon: downloadAssets ? '📎' : '🌐', 
+          count: unit.attachments.length 
+        });
       }
 
       return { sections, generalTopics, conclusionTopics };
@@ -1400,19 +1587,45 @@ const HTMLBuilder = {
         \`;
       }
 
-      // Attachments & Downloadable Files
+      // Attachments & Downloadable Files / Online Resources
       if (unit.attachments && unit.attachments.length > 0) {
         html += \`
           <section class="section-card" id="sec-attachments">
             <div class="section-card-header">
-              <h2>📎 Attachments &amp; Files</h2>
+              <h2>\${downloadAssets ? '📎 Attachments &amp; Files' : '🌐 Online Attachments &amp; Resources'}</h2>
             </div>
+            \${!downloadAssets ? \`
+              <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+                <em>Note: Offline file downloading was disabled during export. The links below direct to the live online Brightspace course resources.</em>
+              </p>
+            \` : ''}
             <div class="attachment-list">
-              \${unit.attachments.map(att => \`
-                <a class="attachment-btn" href="assets/\${att.localFileName || (att.title.replace(/[^a-zA-Z0-9_.-]/g, '_') + '.' + (att.ext || 'pdf'))}" target="_blank">
-                  📄 \${escapeHtml(att.title)}
-                </a>
-              \`).join('')}
+              \${unit.attachments.map(att => {
+                const isLocal = downloadAssets;
+                const cleanFile = att.localFileName || (att.title.replace(/[^a-zA-Z0-9_.-]/g, '_') + '.' + (att.ext || 'pdf'));
+                const localHref = 'assets/' + cleanFile;
+                const href = isLocal ? localHref : (att.url || '#');
+                const isPdf = (att.ext || '').toLowerCase() === 'pdf' || cleanFile.toLowerCase().endsWith('.pdf');
+
+                if (isLocal && isPdf) {
+                  return \`
+                    <div class="attachment-item-card">
+                      <button type="button" class="attachment-btn preview-doc-btn" data-url="\${escapeHtml(localHref)}" data-title="\${escapeHtml(att.title)}" title="Preview document in portal">
+                        📄 \${escapeHtml(att.title)}
+                      </button>
+                      <a class="attachment-open-tab-btn" href="\${escapeHtml(localHref)}" target="_blank" rel="noopener noreferrer" title="Open in separate tab">
+                        ↗
+                      </a>
+                    </div>
+                  \`;
+                }
+
+                return \`
+                  <a class="attachment-btn\${!isLocal ? ' external-link' : ''}" href="\${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">
+                    \${isLocal ? '📄 ' + escapeHtml(att.title) : '🌐 📄 ' + escapeHtml(att.title) + ' ↗'}
+                  </a>
+                \`;
+              }).join('')}
             </div>
           </section>
         \`;
@@ -1464,7 +1677,72 @@ const HTMLBuilder = {
           }
         });
       });
+
+      // Add click listeners to document preview buttons
+      main.querySelectorAll('.preview-doc-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const url = btn.getAttribute('data-url');
+          const title = btn.getAttribute('data-title');
+          openDocModal(url, title);
+        });
+      });
+
+      // Add click listeners to inline assets/*.pdf links to open preview modal
+      main.querySelectorAll('a[href^="assets/"]').forEach(link => {
+        const href = link.getAttribute('href') || '';
+        if (href.toLowerCase().endsWith('.pdf')) {
+          link.addEventListener('click', (e) => {
+            if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+            e.preventDefault();
+            const text = link.innerText ? link.innerText.trim() : href.split('/').pop();
+            openDocModal(href, text);
+          });
+        }
+      });
     }
+
+    function openDocModal(fileUrl, title) {
+      const modal = document.getElementById('doc-modal');
+      const iframe = document.getElementById('doc-modal-iframe');
+      const titleEl = document.getElementById('doc-modal-filename');
+      const openTabBtn = document.getElementById('doc-modal-open-tab');
+      const downloadBtn = document.getElementById('doc-modal-download');
+      if (!modal || !iframe) return;
+
+      if (titleEl) titleEl.textContent = title || fileUrl.split('/').pop();
+      iframe.src = fileUrl;
+      if (openTabBtn) openTabBtn.href = fileUrl;
+      if (downloadBtn) downloadBtn.href = fileUrl;
+
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeDocModal() {
+      const modal = document.getElementById('doc-modal');
+      const iframe = document.getElementById('doc-modal-iframe');
+      if (!modal) return;
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+      if (iframe) iframe.src = '';
+      document.body.style.overflow = '';
+    }
+
+    const docModalCloseBtn = document.getElementById('doc-modal-close-btn');
+    if (docModalCloseBtn) {
+      docModalCloseBtn.addEventListener('click', closeDocModal);
+    }
+    const docModalEl = document.getElementById('doc-modal');
+    if (docModalEl) {
+      docModalEl.addEventListener('click', (e) => {
+        if (e.target && e.target.id === 'doc-modal') closeDocModal();
+      });
+    }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeDocModal();
+    });
 
     function escapeHtml(str) {
       if (!str) return '';

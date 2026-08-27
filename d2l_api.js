@@ -163,20 +163,24 @@ const D2LApi = {
     if (!title && !urlStr) return true;
     const lowerTitle = (title || '').toLowerCase();
     const lowerUrl = (urlStr || '').toLowerCase();
-    return !lowerTitle.includes('course overview') &&
-           !lowerTitle.includes('syllabus') &&
-           !lowerUrl.includes('courseoverview') &&
-           !lowerUrl.includes('syllabus');
+    // Exclude generic LMS UI theme assets / logos
+    if (lowerUrl.includes('html-template-library') || lowerUrl.includes('courseware_html_templates')) {
+      return false;
+    }
+    if (lowerTitle.includes('logo_shield') || lowerTitle.includes('logominimal')) {
+      return false;
+    }
+    return true;
   },
 
   // Advanced content extractor for Reading Assignments & Discussion Forum Prompts
-  async fetchTopicContent(url, discoveredAttachments = []) {
+  async fetchTopicContent(url, discoveredAttachments = [], downloadAssets = true) {
     if (!url) return '';
     try {
       const targetUrl = this.toAbsoluteUrl(url);
 
       // If the URL clearly points to a downloadable file, don't fetch it here.
-      // Just record it as an attachment — the background worker will download it later.
+      // Just record it as an attachment — the background worker will download it later if enabled.
       const lowerUrl = targetUrl.toLowerCase();
       const isHtml = /\.html?(\?|#|$)/i.test(lowerUrl);
       const isBinaryAsset = !isHtml && /\.(pdf|docx?|pptx?|xlsx?|zip|rar|rtf|odt|csv)(\?|#|$)/i.test(lowerUrl);
@@ -191,7 +195,11 @@ const D2LApi = {
             localFileName: cleanFileName
           });
         }
-        return `<p><a href="assets/${cleanFileName}" target="_blank" class="attachment-btn">📄 Open Document (${cleanFileName})</a></p>`;
+        if (downloadAssets) {
+          return `<p><a href="assets/${cleanFileName}" target="_blank" class="attachment-btn">📄 Open Document (${cleanFileName})</a></p>`;
+        } else {
+          return `<p><a href="${targetUrl}" target="_blank" rel="noopener noreferrer" class="attachment-btn external-link">🌐 📄 Open Online Document (${cleanFileName}) ↗</a></p>`;
+        }
       }
 
       const resp = await fetch(targetUrl, {
@@ -211,7 +219,11 @@ const D2LApi = {
             localFileName: cleanFileName
           });
         }
-        return `<p><a href="assets/${cleanFileName}" target="_blank" class="attachment-btn">📄 Open Document (${cleanFileName})</a></p>`;
+        if (downloadAssets) {
+          return `<p><a href="assets/${cleanFileName}" target="_blank" class="attachment-btn">📄 Open Document (${cleanFileName})</a></p>`;
+        } else {
+          return `<p><a href="${targetUrl}" target="_blank" rel="noopener noreferrer" class="attachment-btn external-link">🌐 📄 Open Online Document (${cleanFileName}) ↗</a></p>`;
+        }
       }
 
       const htmlText = await resp.text();
@@ -222,7 +234,7 @@ const D2LApi = {
       if (iframe && iframe.getAttribute('src')) {
         const iframeSrc = this.toAbsoluteUrl(iframe.getAttribute('src'), targetUrl);
         console.log(`Following iframe content source: ${iframeSrc}`);
-        return await this.fetchTopicContent(iframeSrc, discoveredAttachments);
+        return await this.fetchTopicContent(iframeSrc, discoveredAttachments, downloadAssets);
       }
 
       // If page is a Discussion Forum topic, extract ONLY the Activity Content / Topic Prompt, NOT student posts
@@ -238,7 +250,7 @@ const D2LApi = {
       ) || doc.body;
 
       if (contentElem) {
-        return this.processHtmlContent(contentElem.innerHTML, targetUrl, discoveredAttachments);
+        return this.processHtmlContent(contentElem.innerHTML, targetUrl, discoveredAttachments, downloadAssets);
       }
       return '';
     } catch (e) {
@@ -308,7 +320,6 @@ const D2LApi = {
   },
 
   // Fetch individual rubric details
-  // Fetch individual rubric details
   async getRubricDetails(orgUnitId, rubricId) {
     try {
       const resp = await fetch(`/d2l/api/le/1.30/${orgUnitId}/rubrics/${rubricId}`, {
@@ -373,7 +384,7 @@ const D2LApi = {
   },
 
   // Fetch quiz attempt details HTML and extract questions & answers
-  async fetchQuizAttemptContent(item, orgUnitId, quizzesList = [], discoveredAttachments = []) {
+  async fetchQuizAttemptContent(item, orgUnitId, quizzesList = [], discoveredAttachments = [], downloadAssets = true) {
     const topicUrl = item.url;
     const topicTitle = item.title;
     try {
@@ -512,7 +523,7 @@ const D2LApi = {
                   <strong>Notice:</strong> Attempt details page returned status ${attemptResp.status}.
                 </div>`;
       }
-      
+
       const attemptHtml = await attemptResp.text();
       const parser = new DOMParser();
       const attemptDoc = parser.parseFromString(attemptHtml, 'text/html');
@@ -522,7 +533,7 @@ const D2LApi = {
       if (questions.length === 0) {
         const fallback = attemptDoc.querySelector('form#attemptForm, #d2l_content, .d2l-page-main');
         if (fallback) {
-          return this.processQuizHtml(fallback.innerHTML, attemptUrl, discoveredAttachments);
+          return this.processQuizHtml(fallback.innerHTML, attemptUrl, discoveredAttachments, downloadAssets);
         }
         return `<div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
                   <strong>Notice:</strong> Attempt page found, but quiz questions container could not be parsed.
@@ -546,7 +557,7 @@ const D2LApi = {
           parent = parent.parentElement;
         }
         if (!isNested) {
-          const qCleanHtml = this.processQuizHtml(q.innerHTML, attemptUrl, discoveredAttachments);
+          const qCleanHtml = this.processQuizHtml(q.innerHTML, attemptUrl, discoveredAttachments, downloadAssets);
           combinedHtml += `<div class="offline-quiz-question" style="margin-bottom: 24px; padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background-color: var(--bg-card); box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                             <div style="font-weight: 600; color: var(--accent); margin-bottom: 12px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Question ${index + 1}</div>
                             ${qCleanHtml}
@@ -567,7 +578,7 @@ const D2LApi = {
     }
   },
 
-  processQuizHtml(htmlStr, baseUrl = 'https://learn.uopeople.edu/', discoveredAttachments = []) {
+  processQuizHtml(htmlStr, baseUrl = 'https://learn.uopeople.edu/', discoveredAttachments = [], downloadAssets = true) {
     if (!htmlStr) return '';
     try {
       const parser = new DOMParser();
@@ -665,7 +676,7 @@ const D2LApi = {
       });
 
       // 5. Process normal links/images
-      const processed = this.processHtmlContent(container.innerHTML, baseUrl, discoveredAttachments);
+      const processed = this.processHtmlContent(container.innerHTML, baseUrl, discoveredAttachments, downloadAssets);
       return processed;
     } catch (e) {
       console.warn('Failed to process Quiz HTML:', e);
@@ -748,7 +759,7 @@ const D2LApi = {
   },
 
   // Shared processor for content HTML (rewriting links, extracting attachments)
-  processHtmlContent(htmlStr, baseUrl = 'https://learn.uopeople.edu/', discoveredAttachments = []) {
+  processHtmlContent(htmlStr, baseUrl = 'https://learn.uopeople.edu/', discoveredAttachments = [], downloadAssets = true) {
     if (!htmlStr) return '';
     try {
       const parser = new DOMParser();
@@ -767,8 +778,13 @@ const D2LApi = {
             }
             const cleanFileName = this.sanitizeFileName(rawFileName);
 
-            const localAssetPath = `assets/${cleanFileName}`;
-            a.setAttribute('href', localAssetPath);
+            if (downloadAssets) {
+              const localAssetPath = `assets/${cleanFileName}`;
+              a.setAttribute('href', localAssetPath);
+            } else {
+              a.setAttribute('href', absUrl);
+              a.setAttribute('rel', 'noopener noreferrer');
+            }
             a.setAttribute('target', '_blank');
 
             const title = cleanFileName.replace(/\.[^/.]+$/, '');
@@ -783,6 +799,7 @@ const D2LApi = {
           } else if (!href.startsWith('http') && !href.startsWith('#') && !href.startsWith('javascript:')) {
             a.setAttribute('href', absUrl);
             a.setAttribute('target', '_blank');
+            a.setAttribute('rel', 'noopener noreferrer');
           }
         }
       });
@@ -884,7 +901,7 @@ const D2LApi = {
       onProgress = extraData;
       extraData = {};
     }
-    const { dropboxFolders = [], discussionTopics = [], rubricsMap = {}, quizzesList = [], orgUnitId = null, exportScope = 'full' } = extraData;
+    const { dropboxFolders = [], discussionTopics = [], rubricsMap = {}, quizzesList = [], orgUnitId = null, exportScope = 'full', downloadAssets = true } = extraData;
     const isShareable = exportScope === 'shareable';
     if (!tocData || !tocData.Modules) return [];
 
@@ -986,7 +1003,7 @@ const D2LApi = {
             
             if (matchedDiscussion) {
               const descHtml = matchedDiscussion.Description ? (matchedDiscussion.Description.Html || matchedDiscussion.Description.Text || '') : '';
-              let processed = this.processHtmlContent(descHtml, topicUrl, unitObj.attachments);
+              let processed = this.processHtmlContent(descHtml, topicUrl, unitObj.attachments, downloadAssets);
               
               const rubricIds = (matchedDiscussion.Evaluation && matchedDiscussion.Evaluation.RubricIds) || [];
               const rubric = this.findRubricForActivity(matchedDiscussion.Name, rubricIds, rubricsMap);
@@ -1018,7 +1035,7 @@ const D2LApi = {
                   descHtml += '<br/>' + instHtml;
                 }
               }
-              let processed = this.processHtmlContent(descHtml, topicUrl, unitObj.attachments);
+              let processed = this.processHtmlContent(descHtml, topicUrl, unitObj.attachments, downloadAssets);
               
               const rubricIds = (matchedDropbox.Evaluation && matchedDropbox.Evaluation.RubricIds) || [];
               const rubric = this.findRubricForActivity(matchedDropbox.Name, rubricIds, rubricsMap);
@@ -1107,9 +1124,9 @@ const D2LApi = {
           onProgress(Math.round((fetched / Math.max(totalToFetch, 1)) * 50) + 25, `Fetching ${isQuiz ? 'quiz' : 'topic'} (${fetched + 1}/${totalToFetch}): ${item.title}`);
         }
         if (isQuiz) {
-          item.contentHtml = await this.fetchQuizAttemptContent(item, orgUnitId, quizzesList, discovered);
+          item.contentHtml = await this.fetchQuizAttemptContent(item, orgUnitId, quizzesList, discovered, downloadAssets);
         } else {
-          item.contentHtml = await this.fetchTopicContent(item.url, discovered);
+          item.contentHtml = await this.fetchTopicContent(item.url, discovered, downloadAssets);
         }
         if (discovered.length > 0) {
           discovered.forEach(att => {

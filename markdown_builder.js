@@ -186,7 +186,7 @@ const MarkdownBuilder = {
     return md;
   },
 
-  buildMarkdownZip(courseInfo, units, exportScope = 'full') {
+  buildMarkdownZip(courseInfo, units, exportScope = 'full', downloadAssets = true) {
     const files = [];
     const isShareable = exportScope === 'shareable';
 
@@ -232,51 +232,37 @@ const MarkdownBuilder = {
       });
       conclusionTopics.forEach(t => { if (t.id) categorizedIds.add(t.id); });
 
-      // 1. General topics -> 01_Overview.md
-      const generalTopics = (unit.topics || []).filter(t => {
-        if (t.id && categorizedIds.has(t.id)) return false;
-        const title = t.title.toLowerCase();
-        return !title.includes('reading') &&
-               !title.includes('textbook') &&
-               !title.includes('discussion') &&
-               !title.includes('forum') &&
-               !title.includes('assignment') &&
-               !title.includes('learning journal') &&
-               !title.includes('quiz') &&
-               !title.includes('exam') &&
-               !title.includes('test') &&
-               !title.includes('conclusion');
-      });
-
-      if (generalTopics.length > 0 || unit.description) {
-        let md = `# ${unit.title} - Overview\n\n`;
-        if (unit.description) {
-          md += `## Unit Description\n\n${this.htmlToMarkdown(unit.description)}\n\n---\n\n`;
-        }
-        generalTopics.forEach(t => {
-          md += `## ${t.title}\n\n`;
-          if (t.url) {
-            md += `*Brightspace Link: [Open Live Topic ↗](${t.url})*\n\n`;
-          }
-          if (t.contentHtml) {
-            md += `${this.htmlToMarkdown(t.contentHtml)}\n\n`;
-          }
-          md += `---\n\n`;
-        });
-        addFile(folderName, '01_Overview.md', md);
+      // 1. Overview -> 01_Overview.md
+      let overviewMd = `# ${unit.title} - Overview\n\n`;
+      if (unit.description) {
+        overviewMd += `${this.htmlToMarkdown(unit.description)}\n\n`;
       }
+      const generalTopics = (unit.topics || []).filter(t => !categorizedIds.has(t.id));
+      if (generalTopics.length > 0) {
+        generalTopics.forEach(t => {
+          overviewMd += `## ${t.title}\n\n`;
+          if (t.contentHtml) {
+            overviewMd += `${this.htmlToMarkdown(t.contentHtml)}\n\n`;
+          }
+          if (t.url) {
+            overviewMd += `*Brightspace Link: [Open Topic ↗](${t.url})*\n\n`;
+          }
+          overviewMd += `---\n\n`;
+        });
+      }
+      addFile(folderName, '01_Overview.md', overviewMd);
 
-      // 2. Reading -> 02_Readings.md
-      if (unit.readings && unit.readings.length > 0) {
+      // 2. Readings -> 02_Readings.md
+      if ((unit.readings && unit.readings.length > 0) || (unit.attachments && unit.attachments.length > 0)) {
         let md = `# ${unit.title} - Reading Assignments\n\n`;
         if (isShareable) {
           md += `> [!TIP]\n`;
           md += `> **Accessing Required Textbooks:** For proprietary textbooks and articles (e.g. LIRN library materials), please log into the official UoPeople Library portal and search for the titles using the citations listed below. Open Educational Resources (OER) and open-access links can be accessed directly online.\n\n---\n\n`;
         }
-        unit.readings.forEach(r => {
+        (unit.readings || []).forEach(r => {
           md += `## ${r.title}\n\n`;
           if (r.url) {
-            md += `*Brightspace Link: [Open Live Resource ↗](${r.url})*\n\n`;
+            md += `*Brightspace Link: [Open Reading Topic ↗](${r.url})*\n\n`;
           }
           if (r.contentHtml) {
             md += `${this.htmlToMarkdown(r.contentHtml)}\n\n`;
@@ -284,13 +270,21 @@ const MarkdownBuilder = {
           md += `---\n\n`;
         });
 
-        // Add downloaded local attachments reference if present
+        // Add downloaded local attachments or live online links reference if present
         if (unit.attachments && unit.attachments.length > 0) {
-          md += `## 📎 Downloaded Attachments & Files\n\n`;
-          unit.attachments.forEach(att => {
-            const cleanFileName = att.localFileName || (att.title.replace(/[^a-zA-Z0-9_.-]/g, '_') + '.' + (att.ext || 'pdf'));
-            md += `- [📄 ${att.title}](assets/${cleanFileName})\n`;
-          });
+          if (downloadAssets) {
+            md += `## 📎 Downloaded Attachments & Files\n\n`;
+            unit.attachments.forEach(att => {
+              const cleanFileName = att.localFileName || (att.title.replace(/[^a-zA-Z0-9_.-]/g, '_') + '.' + (att.ext || 'pdf'));
+              md += `- [📄 ${att.title}](assets/${cleanFileName})\n`;
+            });
+          } else {
+            md += `## 🌐 Course Attachments & Online Resources\n\n`;
+            md += `> *Note: Offline file downloading was disabled during export. The links below direct to the live online Brightspace course resources.*\n\n`;
+            unit.attachments.forEach(att => {
+              md += `- [🌐 📄 ${att.title} (Open Online ↗)](${att.url || '#'})\n`;
+            });
+          }
           md += `\n---\n\n`;
         }
 

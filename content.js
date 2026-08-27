@@ -147,7 +147,7 @@
       emitProgress(25, exportScope === 'shareable' ? 'Extracting unit overviews & reading assignments...' : 'Extracting unit contents & quizzes...');
       const units = await D2LApi.parseModules(
         tocData,
-        { dropboxFolders, discussionTopics, rubricsMap, quizzesList, orgUnitId, exportScope },
+        { dropboxFolders, discussionTopics, rubricsMap, quizzesList, orgUnitId, exportScope, downloadAssets },
         (progress, statusText) => {
           emitProgress(progress, statusText || (exportScope === 'shareable' ? 'Extracting unit overviews & reading assignments...' : 'Extracting unit contents & quizzes...'));
           console.log(`Extraction progress: ${progress}% - ${statusText || ''}`);
@@ -164,7 +164,7 @@
 
       if (exportFormat === 'markdown') {
         emitProgress(75, 'Generating Markdown documents...');
-        const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope);
+        const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope, downloadAssets);
         zipFiles.push(...markdownFiles);
 
         // Fetch attachment files & embedded PDFs if enabled
@@ -232,7 +232,8 @@
           courseInfo: courseInfo,
           units: units,
           exportedAt: exportedAt,
-          exportScope: exportScope
+          exportScope: exportScope,
+          downloadAssets: downloadAssets
         });
 
         zipFiles.push({
