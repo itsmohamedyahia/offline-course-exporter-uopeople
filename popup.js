@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (chrome.scripting && tab.id) {
           chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            files: ['zip_builder.js', 'd2l_api.js', 'html_builder.js', 'markdown_builder.js', 'content.js']
+            files: ['zip_builder.js', 'd2l_api.js', 'vendor_assets.js', 'html_builder.js', 'markdown_builder.js', 'content.js']
           }).then(() => {
             setTimeout(() => {
               chrome.tabs.sendMessage(tab.id, { action: 'GET_COURSE_STATUS' }, (retryResponse) => {

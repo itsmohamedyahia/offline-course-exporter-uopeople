@@ -18,6 +18,7 @@ $coreFiles = @(
     "background.js",
     "content.js",
     "d2l_api.js",
+    "vendor_assets.js",
     "html_builder.js",
     "markdown_builder.js",
     "zip_builder.js",

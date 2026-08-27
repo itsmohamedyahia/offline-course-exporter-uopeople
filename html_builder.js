@@ -1,6 +1,6 @@
 /**
  * HTML Builder Module
- * Generates an interactive, beautiful offline HTML website file for the course.
+ * Generates a modern, interactive, high-ergonomics offline HTML web portal for the course.
  */
 const HTMLBuilder = {
   buildOfflineSite(courseData) {
@@ -17,6 +17,7 @@ const HTMLBuilder = {
     };
 
     const unitsJson = JSON.stringify(units).replace(/</g, '\\u003c');
+    const courseInfoJson = JSON.stringify(courseInfo).replace(/</g, '\\u003c');
 
     const cleanContentHtmlJS = `
     function cleanContentHtml(html, title = '') {
@@ -53,6 +54,10 @@ const HTMLBuilder = {
         return style;
       });
 
+      // 5. Clean up comments, stray markers, and non-breaking spaces
+      clean = clean.replace(/<!--[\\s\\S]*?-->/g, '').replace(/-->/g, '').replace(/<!--/g, '');
+      clean = clean.replace(/&nbsp;/gi, ' ').replace(/&#160;/gi, ' ');
+
       // Clean up empty paragraphs/spans left over
       clean = clean.replace(/<p>\\s*<\\/p>/gi, '');
       clean = clean.replace(/<span[^>]*>\\s*<\\/span>/gi, '');
@@ -63,6 +68,8 @@ const HTMLBuilder = {
     function cleanUnitDescription(html, title = '') {
       if (!html) return '';
       let clean = html;
+      clean = clean.replace(/<!--[\s\S]*?-->/g, '').replace(/-->/g, '').replace(/<!--/g, '');
+      clean = clean.replace(/&nbsp;/gi, ' ').replace(/&#160;/gi, ' ');
 
       // Remove duplicate title headers if they match or start with the title (case-insensitive)
       clean = clean.replace(/<h[1-6][^>]*>[\\s\\S]*?<\\/h[1-6]>/gi, (match) => {
@@ -93,47 +100,64 @@ const HTMLBuilder = {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(courseInfo.name)} - ${isShareable ? 'Study Guide & Reading List' : 'Offline Course Material'}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" crossorigin="anonymous">
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js" crossorigin="anonymous"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+  <!-- 100% Offline Embedded KaTeX & Prism.js Syntax Styles -->
   <style>
+    ${(typeof VendorAssets !== 'undefined' && VendorAssets.katexCss) ? VendorAssets.katexCss : ''}
+    ${(typeof VendorAssets !== 'undefined' && VendorAssets.prismCss) ? VendorAssets.prismCss : ''}
+  </style>
+  <style>
+    :root {
+      --font-scale: 1;
+    }
+
     :root[data-theme="dark"] {
       --bg-body: #0b0f19;
+      --bg-topbar: rgba(11, 15, 25, 0.92);
       --bg-sticky-bar: rgba(11, 15, 25, 0.88);
       --bg-sidebar: #111827;
       --bg-card: #1f2937;
       --bg-card-hover: #374151;
       --border-color: rgba(255, 255, 255, 0.1);
+      --border-color-focus: rgba(59, 130, 246, 0.5);
       --text-main: #f9fafb;
       --text-muted: #9ca3af;
       --accent: #3b82f6;
       --accent-soft: rgba(59, 130, 246, 0.15);
+      --accent-glow: rgba(59, 130, 246, 0.35);
       --badge-reading: #8b5cf6;
       --badge-discussion: #f59e0b;
       --badge-assignment: #10b981;
       --badge-quiz: #ef4444;
       --badge-attachment: #6366f1;
+      --correct-bg: rgba(16, 185, 129, 0.15);
+      --correct-border: #10b981;
+      --incorrect-bg: rgba(239, 68, 68, 0.15);
+      --incorrect-border: #ef4444;
     }
 
     :root[data-theme="light"] {
       --bg-body: #f8fafc;
+      --bg-topbar: rgba(255, 255, 255, 0.92);
       --bg-sticky-bar: rgba(248, 250, 252, 0.88);
       --bg-sidebar: #ffffff;
       --bg-card: #ffffff;
       --bg-card-hover: #f1f5f9;
       --border-color: #e2e8f0;
+      --border-color-focus: rgba(37, 99, 235, 0.5);
       --text-main: #0f172a;
       --text-muted: #64748b;
       --accent: #2563eb;
       --accent-soft: rgba(37, 99, 235, 0.1);
+      --accent-glow: rgba(37, 99, 235, 0.3);
       --badge-reading: #7c3aed;
       --badge-discussion: #d97706;
       --badge-assignment: #059669;
       --badge-quiz: #dc2626;
       --badge-attachment: #4f46e5;
+      --correct-bg: rgba(16, 185, 129, 0.12);
+      --correct-border: #059669;
+      --incorrect-bg: rgba(239, 68, 68, 0.12);
+      --incorrect-border: #dc2626;
     }
 
     * { 
@@ -144,7 +168,6 @@ const HTMLBuilder = {
       scrollbar-color: var(--accent) var(--bg-body);
     }
 
-    /* Custom Scrollbars */
     ::-webkit-scrollbar {
       width: 7px;
       height: 7px;
@@ -172,16 +195,119 @@ const HTMLBuilder = {
     }
 
     body {
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: calc(14px * var(--font-scale));
       background-color: var(--bg-body);
       color: var(--text-main);
       display: flex;
+      flex-direction: column;
       height: 100vh;
       width: 100vw;
       overflow: hidden;
       line-height: 1.6;
     }
 
+    /* Top Utility Navigation Bar */
+    .top-nav-bar {
+      height: 52px;
+      background: var(--bg-topbar);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      z-index: 50;
+      flex-shrink: 0;
+    }
+    .top-bar-left, .top-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 7px;
+      color: var(--text-main);
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+    .nav-btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--accent);
+    }
+    .nav-btn.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .search-trigger-btn {
+      min-width: 220px;
+      justify-content: space-between;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .search-shortcut {
+      background: var(--bg-body);
+      border: 1px solid var(--border-color);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .font-size-ctrls {
+      display: inline-flex;
+      align-items: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 7px;
+      overflow: hidden;
+    }
+    .font-ctrl-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-main);
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .font-ctrl-btn:hover {
+      background: var(--bg-card-hover);
+      color: var(--accent);
+    }
+    .font-size-indicator {
+      font-size: 11px;
+      padding: 0 4px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+      user-select: none;
+    }
+
+    /* Main App Layout */
+    .app-workspace {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 52px);
+      width: 100vw;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Sidebar */
     .sidebar {
       width: 320px;
       background-color: var(--bg-sidebar);
@@ -189,9 +315,15 @@ const HTMLBuilder = {
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
+      transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 30;
     }
+    .sidebar.collapsed {
+      margin-left: -320px;
+    }
+
     .sidebar-header {
-      padding: 20px;
+      padding: 18px 20px 14px 20px;
       border-bottom: 1px solid var(--border-color);
     }
     .course-badge {
@@ -203,15 +335,52 @@ const HTMLBuilder = {
       padding: 3px 8px;
       border-radius: 6px;
       text-transform: uppercase;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
     }
     .course-title {
-      font-size: 16px;
+      font-size: 15.5px;
       font-weight: 700;
-      line-height: 1.3;
+      line-height: 1.35;
+      margin-bottom: 12px;
     }
+
+    /* Study Progress Tracker */
+    .study-progress-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .study-progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11.5px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .progress-title {
+      color: var(--text-muted);
+    }
+    .progress-count {
+      color: var(--accent);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .progress-bar-track {
+      height: 6px;
+      background: var(--bg-body);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6, #10b981);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
     .search-box {
-      padding: 12px 20px;
+      padding: 10px 16px;
       border-bottom: 1px solid var(--border-color);
     }
     .search-box input {
@@ -219,15 +388,20 @@ const HTMLBuilder = {
       padding: 8px 12px;
       background: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border-radius: 7px;
       color: var(--text-main);
-      font-size: 13px;
+      font-size: 12.5px;
       outline: none;
+      font-family: inherit;
     }
+    .search-box input:focus {
+      border-color: var(--accent);
+    }
+
     .unit-nav {
       flex: 1;
       overflow-y: auto;
-      padding: 12px;
+      padding: 10px;
       display: flex;
       flex-direction: column;
       gap: 4px;
@@ -237,16 +411,17 @@ const HTMLBuilder = {
       flex-direction: column;
     }
     .unit-nav-item {
-      padding: 10px 14px;
-      border-radius: 8px;
+      padding: 9px 12px;
+      border-radius: 7px;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 500;
       color: var(--text-muted);
-      transition: all 0.2s;
+      transition: all 0.15s ease;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 6px;
     }
     .unit-nav-item:hover {
       background-color: var(--bg-card-hover);
@@ -257,10 +432,34 @@ const HTMLBuilder = {
       color: var(--accent);
       font-weight: 600;
     }
+    .unit-nav-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+    }
+    .unit-nav-checkbox {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1.5px solid var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      flex-shrink: 0;
+      color: transparent;
+      transition: all 0.15s;
+    }
+    .unit-nav-checkbox.completed {
+      background: #10b981;
+      border-color: #10b981;
+      color: #ffffff;
+    }
 
     .unit-subnav-list {
       margin: 4px 0 6px 14px;
-      padding-left: 12px;
+      padding-left: 10px;
       border-left: 2px solid var(--border-color);
       display: flex;
       flex-direction: column;
@@ -268,8 +467,8 @@ const HTMLBuilder = {
       animation: fadeIn 0.2s ease;
     }
     .unit-subnav-item {
-      padding: 6px 10px;
-      border-radius: 6px;
+      padding: 5px 8px;
+      border-radius: 5px;
       cursor: pointer;
       font-size: 12px;
       font-weight: 500;
@@ -325,7 +524,7 @@ const HTMLBuilder = {
     .sidebar-footer-links {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
       font-size: 11px;
     }
     .sidebar-footer-links a {
@@ -336,69 +535,61 @@ const HTMLBuilder = {
     .sidebar-footer-links a:hover {
       text-decoration: underline;
     }
-    .theme-toggle {
-      background: none;
-      border: 1px solid var(--border-color);
-      color: var(--text-main);
-      padding: 5px 10px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 11.5px;
-    }
 
-    .exported-page-footer {
-      margin-top: 40px;
-      padding: 22px 20px;
-      border-top: 1px solid var(--border-color);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      gap: 8px;
-      font-size: 12px;
-      color: var(--text-muted);
-      background: var(--bg-card);
-      border-radius: 12px;
-      line-height: 1.5;
-    }
-    .exported-page-footer a {
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 600;
-    }
-    .exported-page-footer a:hover {
-      text-decoration: underline;
-    }
-    .exported-page-footer .footer-brand-line strong {
-      color: var(--text-main);
-    }
-    .exported-page-footer .footer-notice-line {
-      font-size: 11.5px;
-      color: var(--text-muted);
-    }
-
+    /* Main Content Area */
     .main-content {
       flex: 1;
       overflow-y: auto;
-      padding: 32px 40px;
+      padding: 28px 48px;
       display: flex;
       flex-direction: column;
       gap: 28px;
       scroll-behavior: smooth;
+      max-width: 1180px;
+      margin: 0 auto;
+      width: 100%;
     }
 
     .unit-header {
       border-bottom: 1px solid var(--border-color);
-      padding-bottom: 16px;
+      padding-bottom: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .unit-header-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
     }
     .unit-header h1 {
       font-size: 24px;
       font-weight: 700;
-      margin-bottom: 8px;
+      line-height: 1.3;
+    }
+    .unit-meta-badges {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .unit-meta-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      font-weight: 500;
     }
     .unit-description {
       color: var(--text-muted);
       font-size: 14px;
+      line-height: 1.6;
     }
 
     .peer-safe-banner {
@@ -408,31 +599,27 @@ const HTMLBuilder = {
       padding: 12px 16px;
       font-size: 13px;
       color: var(--text-main);
-      box-sizing: border-box;
       line-height: 1.5;
     }
 
     /* Sticky Unit Index / Section Jump Bar */
     .unit-index-sticky-bar {
       position: sticky;
-      top: -32px;
-      margin: 0 -40px;
-      padding: 12px 40px;
+      top: -28px;
+      margin: 0 -48px;
+      padding: 10px 48px;
       background: var(--bg-sticky-bar);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border-color);
       border-top: 1px solid var(--border-color);
-      z-index: 40;
+      z-index: 25;
       display: flex;
       align-items: center;
       gap: 12px;
       box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
     }
     .unit-index-title {
-      display: flex;
-      align-items: center;
-      gap: 6px;
       font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
@@ -440,20 +627,17 @@ const HTMLBuilder = {
       color: var(--text-muted);
       white-space: nowrap;
       flex-shrink: 0;
-      user-select: none;
     }
     .unit-index-pills {
       display: flex;
       align-items: center;
       gap: 8px;
       overflow-x: auto;
-      padding: 4px 2px;
+      padding: 2px;
       scrollbar-width: none;
       flex: 1;
     }
-    .unit-index-pills::-webkit-scrollbar {
-      display: none;
-    }
+    .unit-index-pills::-webkit-scrollbar { display: none; }
     .unit-index-pill {
       display: inline-flex;
       align-items: center;
@@ -463,41 +647,32 @@ const HTMLBuilder = {
       border: 1px solid var(--border-color);
       border-radius: 20px;
       color: var(--text-muted);
-      font-size: 12.5px;
+      font-size: 12px;
       font-weight: 500;
       text-decoration: none;
       white-space: nowrap;
       cursor: pointer;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      user-select: none;
+      transition: all 0.15s ease;
       font-family: inherit;
-      outline: none;
     }
     .unit-index-pill:hover {
       background: var(--bg-card-hover);
       color: var(--text-main);
       border-color: var(--accent);
-      transform: translateY(-1px);
     }
     .unit-index-pill.active {
       background: var(--accent-soft);
       border-color: var(--accent);
       color: var(--accent);
       font-weight: 600;
-      box-shadow: 0 0 0 1px var(--accent);
-    }
-    .unit-index-pill .pill-icon {
-      font-size: 12px;
-      line-height: 1;
     }
     .unit-index-pill .pill-badge {
       background: var(--bg-card-hover);
       color: var(--text-muted);
-      font-size: 11px;
+      font-size: 10.5px;
       padding: 1px 6px;
       border-radius: 10px;
       font-weight: 600;
-      transition: all 0.2s;
     }
     .unit-index-pill.active .pill-badge {
       background: var(--accent);
@@ -509,17 +684,23 @@ const HTMLBuilder = {
       background: var(--bg-card);
       border: 1px solid var(--border-color);
       border-radius: 12px;
-      padding: 20px;
+      padding: 22px;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 18px;
     }
     .section-card-header {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 10px;
       border-bottom: 1px solid var(--border-color);
       padding-bottom: 12px;
+    }
+    .section-card-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
     .section-card-header h2 {
       font-size: 16px;
@@ -546,10 +727,19 @@ const HTMLBuilder = {
       gap: 16px;
     }
     .topic-item {
-      padding: 16px;
+      padding: 18px;
       background: rgba(0, 0, 0, 0.15);
       border: 1px solid var(--border-color);
       border-radius: 8px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .topic-item.highlight-pulse {
+      animation: pulseGlow 1.5s ease 2;
+    }
+    @keyframes pulseGlow {
+      0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); border-color: var(--accent); }
+      50% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); border-color: var(--accent); }
+      100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
     }
     .topic-item h3 {
       font-size: 15px;
@@ -560,48 +750,38 @@ const HTMLBuilder = {
       font-size: 14px;
       color: var(--text-main);
       line-height: 1.6;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
     .topic-body a {
       color: var(--accent);
       text-decoration: underline;
     }
-    .topic-body p {
-      margin-bottom: 16px;
-    }
+    .topic-body p { margin-bottom: 14px; }
     .topic-body h1, .topic-body h2, .topic-body h3, .topic-body h4 {
-      margin-top: 24px;
-      margin-bottom: 12px;
+      margin-top: 20px;
+      margin-bottom: 10px;
       font-weight: 600;
-      color: var(--text-main);
     }
-    .topic-body h1 { font-size: 1.4em; }
-    .topic-body h2 { font-size: 1.25em; }
-    .topic-body h3 { font-size: 1.1em; }
-    .topic-body h4 { font-size: 1.0em; }
     .topic-body ul, .topic-body ol {
-      margin-bottom: 16px;
+      margin-bottom: 14px;
       padding-left: 24px;
     }
-    .topic-body li {
-      margin-bottom: 8px;
-    }
+    .topic-body li { margin-bottom: 6px; }
     .topic-body img {
       max-width: 100%;
       height: auto;
       border-radius: 8px;
-      margin: 16px 0;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      margin: 14px 0;
     }
     .topic-body table {
       width: 100%;
       border-collapse: collapse;
-      margin: 20px 0;
+      margin: 18px 0;
       font-size: 13.5px;
     }
     .topic-body th, .topic-body td {
       border: 1px solid var(--border-color);
-      padding: 10px 12px;
+      padding: 8px 12px;
       text-align: left;
     }
     .topic-body th {
@@ -611,7 +791,7 @@ const HTMLBuilder = {
     .topic-body blockquote {
       border-left: 4px solid var(--accent);
       padding: 8px 16px;
-      margin: 16px 0;
+      margin: 14px 0;
       background-color: var(--bg-card-hover);
       color: var(--text-muted);
       border-radius: 0 8px 8px 0;
@@ -622,40 +802,70 @@ const HTMLBuilder = {
       border-radius: 8px;
       padding: 14px 16px;
       overflow-x: auto;
-      margin: 16px 0;
-      font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+      margin: 14px 0;
+      font-family: 'JetBrains Mono', monospace;
       font-size: 13px;
       line-height: 1.5;
-      color: #e2e8f0;
     }
     .topic-body code {
-      font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+      font-family: 'JetBrains Mono', monospace;
       font-size: 12.5px;
       background: rgba(255, 255, 255, 0.08);
       padding: 2px 6px;
       border-radius: 4px;
-      color: var(--accent-light, #818cf8);
+      color: var(--accent);
     }
     .topic-body pre code {
       background: transparent;
       padding: 0;
-      border-radius: 0;
       color: inherit;
     }
-    .video-container.youtube-card {
-      margin: 20px 0;
+
+    .topic-actions-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border-color);
+    }
+    .topic-action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
       background: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 12px;
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+    .topic-action-btn:hover {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* Video Player Cards */
+    .video-container.youtube-card {
+      margin: 18px 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
       overflow: hidden;
-      max-width: 640px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+      max-width: 600px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      transition: border-color 0.2s, transform 0.2s;
     }
     .video-container.youtube-card:hover {
       border-color: rgba(239, 68, 68, 0.5);
       transform: translateY(-2px);
-      box-shadow: 0 8px 16px -2px rgba(0, 0, 0, 0.2);
     }
     .youtube-card-link {
       display: block;
@@ -678,7 +888,6 @@ const HTMLBuilder = {
       object-fit: cover;
       transition: opacity 0.2s, transform 0.3s;
       margin: 0 !important;
-      border-radius: 0 !important;
     }
     .youtube-card-link:hover .youtube-thumb-img {
       opacity: 0.9;
@@ -690,18 +899,13 @@ const HTMLBuilder = {
       left: 50%;
       transform: translate(-50%, -50%);
       filter: drop-shadow(0 4px 10px rgba(0,0,0,0.5));
-      transition: transform 0.2s, filter 0.2s;
       pointer-events: none;
-    }
-    .youtube-card-link:hover .youtube-play-btn {
-      transform: translate(-50%, -50%) scale(1.12);
-      filter: drop-shadow(0 6px 14px rgba(255, 0, 0, 0.6));
     }
     .youtube-card-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 16px;
+      padding: 10px 14px;
       background: var(--bg-card);
       border-top: 1px solid var(--border-color);
       gap: 12px;
@@ -712,36 +916,29 @@ const HTMLBuilder = {
       gap: 2px;
     }
     .youtube-card-title {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
       color: var(--text-main);
     }
     .youtube-card-sub {
-      font-size: 12px;
+      font-size: 11.5px;
       color: var(--text-muted);
     }
     .watch-on-youtube-btn {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       background-color: #ff0000;
       color: #ffffff !important;
-      padding: 8px 16px;
-      border-radius: 6px;
+      padding: 6px 12px;
+      border-radius: 5px;
       text-decoration: none !important;
       font-weight: 600;
-      font-size: 13px;
+      font-size: 12px;
       white-space: nowrap;
-      transition: background-color 0.2s, transform 0.1s;
-    }
-    .watch-on-youtube-btn:hover {
-      background-color: #cc0000;
-      transform: scale(1.02);
-    }
-    .watch-on-youtube-btn:active {
-      transform: scale(0.98);
     }
 
+    /* Attachments */
     .attachment-list {
       display: flex;
       flex-wrap: wrap;
@@ -754,21 +951,16 @@ const HTMLBuilder = {
       border: 1px solid var(--border-color);
       border-radius: 8px;
       overflow: hidden;
-      transition: border-color 0.15s ease, transform 0.15s ease;
+      transition: border-color 0.15s ease;
     }
     .attachment-item-card:hover {
       border-color: var(--accent);
-      transform: translateY(-1px);
     }
     .attachment-item-card .attachment-btn {
       border: none;
       background: transparent;
-      border-radius: 0;
-      cursor: pointer;
       padding: 8px 12px;
-    }
-    .attachment-item-card .attachment-btn:hover {
-      background: var(--accent-soft);
+      cursor: pointer;
     }
     .attachment-open-tab-btn {
       display: inline-flex;
@@ -780,7 +972,6 @@ const HTMLBuilder = {
       color: var(--text-muted);
       text-decoration: none;
       border-left: 1px solid var(--border-color);
-      transition: background 0.15s ease, color 0.15s ease;
     }
     .attachment-open-tab-btn:hover {
       background: var(--accent);
@@ -798,15 +989,260 @@ const HTMLBuilder = {
       text-decoration: none;
       font-size: 13px;
       font-weight: 500;
-      transition: background 0.2s, border-color 0.2s;
     }
     .attachment-btn:hover {
       background: var(--accent-soft);
       border-color: var(--accent);
     }
 
+    /* Interactive Quizzes & Active Recall Mode */
+    .quiz-mode-switch {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 4px;
+    }
+    .quiz-mode-btn {
+      padding: 4px 10px;
+      border-radius: 5px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .quiz-mode-btn.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .quiz-empty-guide-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      background: var(--bg-card-hover);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 10px;
+    }
+    .quiz-guide-icon {
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+    .quiz-guide-content h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .quiz-guide-content p {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+    .quiz-direct-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid var(--border-color);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .quiz-direct-btn:hover {
+      background: var(--accent);
+      color: #ffffff;
+    }
+
+    .quiz-details-accordion {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    .quiz-details-accordion[open] {
+      border-color: var(--accent) !important;
+    }
+    .quiz-summary {
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+      list-style: none;
+    }
+    .quiz-summary::-webkit-details-marker { display: none; }
+    .view-questions-badge {
+      background: var(--bg-card-hover);
+      border: 1px solid var(--border-color);
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .offline-quiz-question {
+      margin-bottom: 20px;
+      padding: 18px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background-color: var(--bg-card);
+      transition: border-color 0.2s;
+    }
+    .offline-quiz-question input[type="radio"],
+    .offline-quiz-question input[type="checkbox"] {
+      cursor: pointer;
+      accent-color: var(--accent);
+      width: 15px;
+      height: 15px;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    .offline-quiz-question label {
+      cursor: pointer;
+      vertical-align: middle;
+    }
+
+    /* Question Action Verification Bar */
+    .quiz-question-check-bar {
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .check-answer-btn {
+      padding: 5px 12px;
+      background: var(--accent);
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .answer-feedback-tag {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      display: none;
+    }
+    .answer-feedback-tag.correct {
+      display: inline-block;
+      background: var(--correct-bg);
+      color: #10b981;
+      border: 1px solid var(--correct-border);
+    }
+    .answer-feedback-tag.incorrect {
+      display: inline-block;
+      background: var(--incorrect-bg);
+      color: #ef4444;
+      border: 1px solid var(--incorrect-border);
+    }
+
+    /* Bottom Linear Navigation */
+    .unit-bottom-nav {
+      margin-top: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .unit-completion-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .unit-complete-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: var(--bg-card-hover);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-main);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+    .unit-complete-toggle-btn:hover {
+      border-color: #10b981;
+      color: #10b981;
+    }
+    .unit-complete-toggle-btn.completed {
+      background: #10b981;
+      border-color: #10b981;
+      color: #ffffff;
+    }
+
+    .unit-prev-next-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .unit-nav-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 16px 20px;
+      text-decoration: none;
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+      text-align: left;
+    }
+    .unit-nav-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    .unit-nav-card.next {
+      text-align: right;
+      grid-column: 2;
+    }
+    .unit-nav-card-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .unit-nav-card-title {
+      font-size: 14.5px;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+
     /* Document Preview Modal */
-    .doc-modal-backdrop {
+    .doc-modal-backdrop, .search-modal-backdrop, .shortcuts-modal-backdrop {
       position: fixed;
       top: 0;
       left: 0;
@@ -822,7 +1258,7 @@ const HTMLBuilder = {
       pointer-events: none;
       transition: opacity 0.2s ease;
     }
-    .doc-modal-backdrop.open {
+    .doc-modal-backdrop.open, .search-modal-backdrop.open, .shortcuts-modal-backdrop.open {
       opacity: 1;
       pointer-events: auto;
     }
@@ -836,12 +1272,6 @@ const HTMLBuilder = {
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-      transform: scale(0.96);
-      transition: transform 0.2s ease;
-    }
-    .doc-modal-backdrop.open .doc-modal-window {
-      transform: scale(1);
     }
     .doc-modal-header {
       padding: 12px 18px;
@@ -852,19 +1282,9 @@ const HTMLBuilder = {
       justify-content: space-between;
       gap: 12px;
     }
-    .doc-modal-title-wrap {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      overflow: hidden;
-    }
-    .doc-modal-icon {
-      font-size: 16px;
-    }
     .doc-modal-title {
       font-size: 14px;
       font-weight: 600;
-      color: var(--text-main);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -887,35 +1307,24 @@ const HTMLBuilder = {
       font-size: 12px;
       font-weight: 600;
       text-decoration: none;
-      transition: background 0.15s ease, color 0.15s ease;
-      cursor: pointer;
     }
-    .doc-modal-btn:hover {
-      background: var(--accent);
-      color: #ffffff;
-    }
-    .doc-modal-close {
+    .doc-modal-close, .search-modal-close, .shortcuts-modal-close {
       background: transparent;
-      border: 1px solid transparent;
+      border: none;
       color: var(--text-muted);
-      font-size: 16px;
-      font-weight: 700;
+      font-size: 18px;
+      cursor: pointer;
       padding: 4px 8px;
       border-radius: 6px;
-      cursor: pointer;
-      line-height: 1;
-      transition: color 0.15s ease, background 0.15s ease;
     }
-    .doc-modal-close:hover {
+    .doc-modal-close:hover, .search-modal-close:hover, .shortcuts-modal-close:hover {
       color: #ef4444;
-      background: rgba(239, 68, 68, 0.1);
     }
     .doc-modal-body {
       flex: 1;
       width: 100%;
       height: 100%;
       background: #525659;
-      position: relative;
     }
     .doc-modal-frame {
       width: 100%;
@@ -923,93 +1332,236 @@ const HTMLBuilder = {
       border: none;
     }
 
-    .quiz-notice {
-      background: rgba(239, 68, 68, 0.05);
-      border: 1px solid rgba(239, 68, 68, 0.2);
-      padding: 14px 18px;
-      border-radius: 8px;
-      color: var(--text-main);
-      font-size: 13px;
+    /* Live Search Modal */
+    .search-modal-window {
+      width: 90vw;
+      max-width: 680px;
+      max-height: 80vh;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     }
-
-    .quiz-details-accordion {
+    .search-modal-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .search-modal-header input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-main);
+      font-size: 16px;
+      outline: none;
+      font-family: inherit;
+    }
+    .search-modal-results {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 55vh;
+    }
+    .search-result-item {
+      padding: 12px 14px;
       background: var(--bg-card);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 14px;
-      margin-bottom: 12px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-
-    .quiz-details-accordion[open] {
-      border-color: var(--accent) !important;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    }
-
-    .quiz-summary {
-      font-weight: 600;
-      font-size: 14px;
       cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .search-result-item:hover, .search-result-item.selected {
+      border-color: var(--accent);
+      background: var(--bg-card-hover);
+    }
+    .search-res-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .search-res-unit {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+    .search-res-tag {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--bg-body);
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .search-res-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .search-res-snippet {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .search-highlight {
+      background: rgba(245, 158, 11, 0.35);
+      color: #ffffff;
+      padding: 1px 3px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+    .search-modal-footer {
+      padding: 10px 16px;
+      border-top: 1px solid var(--border-color);
+      font-size: 11.5px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Shortcuts Help Modal */
+    .shortcuts-modal-window {
+      width: 90vw;
+      max-width: 520px;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .shortcuts-modal-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-color);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      user-select: none;
-      outline: none;
-      list-style: none;
     }
-
-    .quiz-summary::-webkit-details-marker {
-      display: none;
+    .shortcuts-modal-body {
+      padding: 16px 20px;
     }
-
-    .view-questions-badge {
-      background: var(--bg-card-hover);
+    .shortcuts-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .shortcuts-table td {
+      padding: 8px 6px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .shortcuts-table kbd {
+      background: var(--bg-card);
       border: 1px solid var(--border-color);
-      padding: 6px 12px;
-      border-radius: 20px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    /* Toast Notification */
+    .toast-notification {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #10b981;
+      color: #ffffff;
+      padding: 10px 20px;
+      border-radius: 30px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.5);
+      z-index: 2000;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .toast-notification.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .exported-page-footer {
+      margin-top: 40px;
+      padding: 20px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 8px;
       font-size: 12px;
       color: var(--text-muted);
-      font-weight: 500;
-      transition: background 0.2s, border-color 0.2s, color 0.2s;
+      background: var(--bg-card);
+      border-radius: 12px;
+      line-height: 1.5;
     }
-
-    .quiz-details-accordion[open] .view-questions-badge {
-      background: var(--accent-soft);
-      border-color: var(--accent);
+    .exported-page-footer a {
       color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .exported-page-footer a:hover {
+      text-decoration: underline;
     }
 
-    .offline-quiz-question {
-      margin-bottom: 24px;
-      padding: 20px;
-      border: 1px solid var(--border-color);
+    /* Code Blocks & Offline Syntax Highlighting (for CS & Technical Courses) */
+    .code-block-wrapper {
+      margin: 18px 0;
       border-radius: 8px;
-      background-color: var(--bg-card);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+      background: #1d1f21;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
-
-    .offline-quiz-question input[type="radio"],
-    .offline-quiz-question input[type="checkbox"] {
-      cursor: not-allowed !important;
-      accent-color: var(--accent) !important;
-      opacity: 0.85;
-      width: 14px;
-      height: 14px;
-      vertical-align: middle;
-      margin-right: 6px;
+    .code-block-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px;
+      background: rgba(0, 0, 0, 0.3);
+      border-bottom: 1px solid var(--border-color);
     }
-
-    .offline-quiz-question label {
-      cursor: not-allowed !important;
-      vertical-align: middle;
+    .code-lang-badge {
+      font-size: 11px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      color: var(--accent);
+      letter-spacing: 0.5px;
     }
-
-    @media print {
-      body { height: auto; overflow: visible; background: #fff; color: #000; }
-      .sidebar { display: none; }
-      .main-content { padding: 0; overflow: visible; }
-      .section-card { border: 1px solid #ccc; page-break-inside: avoid; }
-      .unit-index-sticky-bar, .floating-back-to-top { display: none !important; }
+    .code-copy-btn {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+    .code-copy-btn:hover {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .code-block-wrapper pre {
+      margin: 0 !important;
+      border: none !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      padding: 14px 16px !important;
     }
 
     .floating-back-to-top {
@@ -1033,7 +1585,7 @@ const HTMLBuilder = {
       opacity: 0;
       pointer-events: none;
       transform: translateY(10px);
-      transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+      transition: all 0.2s ease;
     }
     .floating-back-to-top.visible {
       opacity: 1;
@@ -1044,9 +1596,23 @@ const HTMLBuilder = {
       background: var(--accent);
       color: #ffffff;
       border-color: var(--accent);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(59, 130, 246, 0.35);
     }
+
+    @media (max-width: 860px) {
+      .sidebar { position: absolute; left: 0; top: 0; bottom: 0; }
+      .sidebar.collapsed { margin-left: -320px; }
+      .main-content { padding: 20px; }
+      .unit-index-sticky-bar { margin: 0 -20px; padding: 10px 20px; }
+      .unit-prev-next-grid { grid-template-columns: 1fr; }
+      .unit-nav-card.next { grid-column: 1; }
+    }
+
+    @media print {
+      .top-nav-bar, .sidebar, .unit-index-sticky-bar, .floating-back-to-top, .unit-bottom-nav, .topic-actions-row { display: none !important; }
+      body, .main-content { height: auto; overflow: visible; background: #fff; color: #000; padding: 0; }
+      .section-card { border: 1px solid #ccc; page-break-inside: avoid; }
+    }
+
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(-4px); }
       to { opacity: 1; transform: translateY(0); }
@@ -1055,35 +1621,81 @@ const HTMLBuilder = {
 </head>
 <body>
 
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <span class="course-badge" style="${isShareable ? 'background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);' : ''}">
-        ${isShareable ? '👥 Study Guide (Peer-Safe)' : 'UoPeople Offline'}
-      </span>
-      <h1 class="course-title">${escapeHtml(courseInfo.name)}</h1>
+  <!-- Top Utility Bar -->
+  <header class="top-nav-bar">
+    <div class="top-bar-left">
+      <button class="nav-btn" id="toggle-sidebar-btn" title="Toggle Sidebar / Focus Mode (F)">
+        <span class="btn-icon">🔲</span>
+        <span class="btn-label" id="focus-btn-label">Focus Mode</span>
+      </button>
+      <button class="nav-btn search-trigger-btn" id="open-search-btn" title="Search course content (Ctrl+K or /)">
+        <span style="display: flex; align-items: center; gap: 6px;">
+          <span>🔍</span>
+          <span class="search-placeholder">Quick Search...</span>
+        </span>
+        <span class="search-shortcut">/</span>
+      </button>
     </div>
-    <div class="search-box">
-      <input type="text" id="search-input" placeholder="Search topics & units...">
-    </div>
-    <nav class="unit-nav" id="unit-nav">
-      <!-- Generated Unit Nav Items -->
-    </nav>
-    <div class="sidebar-footer">
-      <div class="sidebar-footer-row">
-        <span>Exported: ${escapeHtml(exportedAt)}</span>
-        <button class="theme-toggle" id="theme-toggle">☀️ / 🌙</button>
+    <div class="top-bar-right">
+      <div class="font-size-ctrls" title="Adjust text size">
+        <button class="font-ctrl-btn" id="font-decrease-btn" title="Decrease font size (-)">A-</button>
+        <span class="font-size-indicator" id="font-size-label">100%</span>
+        <button class="font-ctrl-btn" id="font-increase-btn" title="Increase font size (+)">A+</button>
       </div>
-      <div class="sidebar-footer-links">
-        <a href="https://github.com/itsmohamedyahia/offline-course-exporter-uopeople" target="_blank" rel="noopener noreferrer" title="Star on GitHub">⭐ Star</a> • 
-        <a href="https://ko-fi.com/myahiakhidr" target="_blank" rel="noopener noreferrer" title="Support Developer">☕ Coffee</a> • 
-        <a href="https://www.linkedin.com/in/myahiakhidr/" target="_blank" rel="noopener noreferrer" title="LinkedIn">💼 Author</a>
-      </div>
+      <button class="nav-btn" id="shortcuts-help-btn" title="Keyboard Shortcuts (?)">
+        <span>⌨️</span>
+      </button>
+      <button class="nav-btn theme-toggle-btn" id="theme-toggle" title="Toggle Dark/Light Mode (T)">
+        <span id="theme-icon">☀️ / 🌙</span>
+      </button>
     </div>
-  </aside>
+  </header>
 
-  <main class="main-content" id="main-content">
-    <!-- Active Unit Content Rendered Here -->
-  </main>
+  <div class="app-workspace">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="app-sidebar">
+      <div class="sidebar-header">
+        <span class="course-badge" style="${isShareable ? 'background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);' : ''}">
+          ${isShareable ? '👥 Study Guide (Peer-Safe)' : 'UoPeople Offline'}
+        </span>
+        <h1 class="course-title">${escapeHtml(courseInfo.name)}</h1>
+
+        <!-- Study Progress Tracker -->
+        <div class="study-progress-card">
+          <div class="study-progress-header">
+            <span class="progress-title">Study Progress</span>
+            <span class="progress-count" id="study-progress-count">0 / ${units.length}</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="study-progress-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-box">
+        <input type="text" id="search-input" placeholder="Filter units...">
+      </div>
+
+      <nav class="unit-nav" id="unit-nav">
+        <!-- Generated Unit Nav Items -->
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-footer-row">
+          <span>Exported: ${escapeHtml(exportedAt)}</span>
+        </div>
+        <div class="sidebar-footer-links">
+          <a href="https://github.com/itsmohamedyahia/offline-course-exporter-uopeople" target="_blank" rel="noopener noreferrer">⭐ Star on GitHub</a> • 
+          <a href="https://ko-fi.com/myahiakhidr" target="_blank" rel="noopener noreferrer">☕ Buy Me a Coffee</a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content" id="main-content">
+      <!-- Active Unit Content Rendered Here -->
+    </main>
+  </div>
 
   <button class="floating-back-to-top" id="back-to-top-btn" title="Back to top" aria-label="Back to top">↑</button>
 
@@ -1091,17 +1703,13 @@ const HTMLBuilder = {
   <div class="doc-modal-backdrop" id="doc-modal" aria-hidden="true">
     <div class="doc-modal-window">
       <div class="doc-modal-header">
-        <div class="doc-modal-title-wrap">
-          <span class="doc-modal-icon">📄</span>
+        <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+          <span>📄</span>
           <span class="doc-modal-title" id="doc-modal-filename">Document Viewer</span>
         </div>
         <div class="doc-modal-actions">
-          <a id="doc-modal-open-tab" href="#" target="_blank" rel="noopener noreferrer" class="doc-modal-btn" title="Open in dedicated browser tab">
-            ↗ Open in New Tab
-          </a>
-          <a id="doc-modal-download" href="#" download class="doc-modal-btn" title="Save file to disk">
-            ⬇ Save File
-          </a>
+          <a id="doc-modal-open-tab" href="#" target="_blank" rel="noopener noreferrer" class="doc-modal-btn">↗ Open in New Tab</a>
+          <a id="doc-modal-download" href="#" download class="doc-modal-btn">⬇ Save File</a>
           <button class="doc-modal-close" id="doc-modal-close-btn" title="Close viewer (ESC)">✕</button>
         </div>
       </div>
@@ -1111,19 +1719,188 @@ const HTMLBuilder = {
     </div>
   </div>
 
+  <!-- Full-Text Search Modal -->
+  <div class="search-modal-backdrop" id="search-modal" aria-hidden="true">
+    <div class="search-modal-window">
+      <div class="search-modal-header">
+        <span style="font-size: 18px;">🔍</span>
+        <input type="text" id="modal-search-input" placeholder="Search topics, readings, assignments..." autocomplete="off">
+        <button class="search-modal-close" id="search-modal-close-btn" title="Close (ESC)">✕</button>
+      </div>
+      <div class="search-modal-results" id="modal-search-results">
+        <div style="text-align: center; color: var(--text-muted); padding: 30px; font-size: 13px;">
+          Type anything to search across all course units, readings, and topics.
+        </div>
+      </div>
+      <div class="search-modal-footer">
+        <span>Use <strong>↑</strong> <strong>↓</strong> to navigate, <strong>Enter</strong> to select</span>
+        <span><kbd style="font-size: 10px; padding: 2px 4px; border: 1px solid var(--border-color); border-radius: 3px;">ESC</kbd> to close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Keyboard Shortcuts Modal -->
+  <div class="shortcuts-modal-backdrop" id="shortcuts-modal" aria-hidden="true">
+    <div class="shortcuts-modal-window">
+      <div class="shortcuts-modal-header">
+        <h2 style="font-size: 15px; font-weight: 700;">⌨️ Keyboard Shortcuts</h2>
+        <button class="shortcuts-modal-close" id="shortcuts-modal-close-btn">✕</button>
+      </div>
+      <div class="shortcuts-modal-body">
+        <table class="shortcuts-table">
+          <tr><td><kbd>[</kbd> or <kbd>p</kbd></td><td>Previous Unit</td></tr>
+          <tr><td><kbd>]</kbd> or <kbd>n</kbd></td><td>Next Unit</td></tr>
+          <tr><td><kbd>/</kbd> or <kbd>Ctrl+K</kbd></td><td>Open Full Course Search</td></tr>
+          <tr><td><kbd>f</kbd></td><td>Toggle Focus / Zen Mode</td></tr>
+          <tr><td><kbd>t</kbd></td><td>Toggle Dark / Light Theme</td></tr>
+          <tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>Increase / Decrease Text Size</td></tr>
+          <tr><td><kbd>0</kbd></td><td>Reset Text Size</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Close Search / PDF Preview</td></tr>
+          <tr><td><kbd>?</kbd></td><td>Toggle Shortcuts Help</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast-notification" id="app-toast"></div>
+
+  <!-- Embedded 100% Offline KaTeX Math & Prism.js Syntax Engines -->
+  <script>
+    ${(typeof VendorAssets !== 'undefined' && VendorAssets.katexJs) ? VendorAssets.katexJs : ''}
+  </script>
+  <script>
+    ${(typeof VendorAssets !== 'undefined' && VendorAssets.katexAutoJs) ? VendorAssets.katexAutoJs : ''}
+  </script>
+  <script>
+    ${(typeof VendorAssets !== 'undefined' && VendorAssets.prismJs) ? VendorAssets.prismJs : ''}
+  </script>
   <script>
     const units = ${unitsJson};
+    const courseInfo = ${courseInfoJson};
     const isShareable = ${isShareable};
     const downloadAssets = ${Boolean(downloadAssets)};
+    const courseStorageKey = 'uop_progress_' + (courseInfo.id || 'default');
+
     let activeUnitIndex = 0;
     let currentScrollSpyObserver = null;
+    let completedUnits = new Set();
+    let currentFontScale = 1.0;
+    let quizPracticeModes = {}; // unitIndex -> boolean
 
     ${cleanContentHtmlJS}
+
+    // Load saved preferences from localStorage
+    function loadSavedState() {
+      try {
+        const savedProgress = localStorage.getItem(courseStorageKey);
+        if (savedProgress) {
+          completedUnits = new Set(JSON.parse(savedProgress));
+        }
+        const savedScale = localStorage.getItem('uop_font_scale');
+        if (savedScale) {
+          currentFontScale = parseFloat(savedScale) || 1.0;
+          applyFontScale(currentFontScale);
+        }
+        const savedFocus = localStorage.getItem('uop_focus_mode');
+        if (savedFocus === 'true') {
+          const sidebar = document.getElementById('app-sidebar');
+          if (sidebar) sidebar.classList.add('collapsed');
+          const btn = document.getElementById('toggle-sidebar-btn');
+          if (btn) btn.classList.add('active');
+        }
+        const savedTheme = localStorage.getItem('uop_theme');
+        if (savedTheme) {
+          document.documentElement.setAttribute('data-theme', savedTheme);
+        }
+      } catch (e) {
+        console.warn('Could not load localStorage preferences', e);
+      }
+    }
+
+    function saveProgress() {
+      try {
+        localStorage.setItem(courseStorageKey, JSON.stringify(Array.from(completedUnits)));
+      } catch (e) {}
+    }
+
+    function updateProgressUI() {
+      const countEl = document.getElementById('study-progress-count');
+      const fillEl = document.getElementById('study-progress-fill');
+      const total = units.length || 1;
+      const count = completedUnits.size;
+      const pct = Math.round((count / total) * 100);
+
+      if (countEl) countEl.textContent = count + ' / ' + total + ' (' + pct + '%)';
+      if (fillEl) fillEl.style.width = pct + '%';
+    }
+
+    function toggleUnitComplete(unitIdx) {
+      if (completedUnits.has(unitIdx)) {
+        completedUnits.delete(unitIdx);
+        showToast('Unit marked as incomplete');
+      } else {
+        completedUnits.add(unitIdx);
+        showToast('🎉 Unit marked as completed!');
+      }
+      saveProgress();
+      updateProgressUI();
+      renderNav();
+      renderMain();
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('app-toast');
+      if (!toast) return;
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2400);
+    }
+
+    function applyFontScale(scale) {
+      currentFontScale = Math.min(1.3, Math.max(0.8, scale));
+      document.documentElement.style.setProperty('--font-scale', currentFontScale);
+      const label = document.getElementById('font-size-label');
+      if (label) label.textContent = Math.round(currentFontScale * 100) + '%';
+      try {
+        localStorage.setItem('uop_font_scale', currentFontScale.toString());
+      } catch (e) {}
+    }
+
+    function estimateReadingTime(unit) {
+      let fullText = (unit.title || '') + ' ' + (unit.description || '');
+      (unit.topics || []).forEach(t => { fullText += ' ' + (t.title || '') + ' ' + (t.contentHtml || ''); });
+      (unit.readings || []).forEach(r => { fullText += ' ' + (r.title || '') + ' ' + (r.contentHtml || ''); });
+      const clean = fullText.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();
+      const words = clean ? clean.split(' ').length : 0;
+      const minutes = Math.max(1, Math.ceil(words / 190));
+      return { words, minutes };
+    }
+
+    function copyApaCitation(title, contentHtml, url) {
+      let citation = '';
+      const text = (contentHtml || '').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();
+      
+      // Check if text already has an APA formatted string e.g. "Author, A. (Year). Title..."
+      const apaMatch = text.match(/([A-Z][a-zA-Z\\s,-]+?\\(\\d{4}\\)\\.\\s*[^.]+\\..*)/);
+      if (apaMatch && apaMatch[1]) {
+        citation = apaMatch[1].trim();
+      } else {
+        citation = title + '. (n.d.). University of the People Brightspace Course Material. ' + (url || '');
+      }
+
+      navigator.clipboard.writeText(citation).then(() => {
+        showToast('📋 APA Citation copied to clipboard!');
+      }).catch(() => {
+        showToast('Failed to copy citation');
+      });
+    }
 
     function getUnitSections(unit) {
       if (!unit) return { sections: [], generalTopics: [], conclusionTopics: [] };
 
-      // Collect IDs of topics assigned to specialized sections to prevent duplicates in Overview
       const categorizedIds = new Set();
       (unit.readings || []).forEach(t => { if (t.id) categorizedIds.add(t.id); });
       if (!isShareable) {
@@ -1132,14 +1909,12 @@ const HTMLBuilder = {
         (unit.quizzes || []).forEach(t => { if (t.id) categorizedIds.add(t.id); });
       }
 
-      // Extract Conclusion topics
       const conclusionTopics = (unit.topics || []).filter(t => {
         const title = t.title.toLowerCase();
         return title.includes('conclusion');
       });
       conclusionTopics.forEach(t => { if (t.id) categorizedIds.add(t.id); });
 
-      // Filter general topics (Overview, Syllabus, Welcome, etc.) excluding any specialized topics
       const generalTopics = (unit.topics || []).filter(t => {
         if (t.id && categorizedIds.has(t.id)) return false;
         const title = t.title.toLowerCase();
@@ -1210,7 +1985,9 @@ const HTMLBuilder = {
       const navContainer = document.getElementById('unit-nav');
       navContainer.innerHTML = '';
       filteredUnits.forEach((unit) => {
-        const isCurrentActive = units.indexOf(unit) === activeUnitIndex;
+        const unitIdx = units.indexOf(unit);
+        const isCurrentActive = unitIdx === activeUnitIndex;
+        const isCompleted = completedUnits.has(unitIdx);
         const itemWrapper = document.createElement('div');
         itemWrapper.className = 'unit-nav-wrapper';
 
@@ -1220,16 +1997,14 @@ const HTMLBuilder = {
         const item = document.createElement('div');
         item.className = 'unit-nav-item' + (isCurrentActive ? ' active' : '');
         item.innerHTML = \`
-          <span>\${escapeHtml(unit.title)}</span>
+          <div class="unit-nav-title-group">
+            <span class="unit-nav-checkbox\${isCompleted ? ' completed' : ''}" title="\${isCompleted ? 'Completed' : 'Mark as complete'}">✓</span>
+            <span>\${escapeHtml(unit.title)}</span>
+          </div>
           \${hasSections ? '<span class="unit-chevron" style="font-size: 10px; opacity: 0.6; transition: transform 0.2s ease; transform: ' + (isCurrentActive ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>' : ''}
         \`;
         item.onclick = () => {
-          const unitIdx = units.indexOf(unit);
-          if (activeUnitIndex === unitIdx) {
-            activeUnitIndex = -1;
-          } else {
-            activeUnitIndex = unitIdx;
-          }
+          activeUnitIndex = unitIdx;
           renderNav(filteredUnits);
           renderMain();
         };
@@ -1262,6 +2037,7 @@ const HTMLBuilder = {
 
         navContainer.appendChild(itemWrapper);
       });
+      updateProgressUI();
     }
 
     function scrollToSection(id) {
@@ -1350,6 +2126,15 @@ const HTMLBuilder = {
       }
     }
 
+    function goToUnit(idx) {
+      if (idx < 0 || idx >= units.length) return;
+      activeUnitIndex = idx;
+      renderNav();
+      renderMain();
+      const main = document.getElementById('main-content');
+      if (main) main.scrollTop = 0;
+    }
+
     function renderMain() {
       const main = document.getElementById('main-content');
       const unit = units[activeUnitIndex];
@@ -1366,10 +2151,24 @@ const HTMLBuilder = {
 
       const { sections, generalTopics, conclusionTopics } = getUnitSections(unit);
       const cleanDesc = cleanUnitDescription(unit.description, unit.title);
+      const readingTime = estimateReadingTime(unit);
+      const isCompleted = completedUnits.has(activeUnitIndex);
 
       let html = \`
         <header class="unit-header" id="sec-header">
-          <h1>\${escapeHtml(unit.title)}</h1>
+          <div class="unit-header-top-row">
+            <div>
+              <div class="unit-meta-badges" style="margin-bottom: 6px;">
+                <span class="unit-meta-badge">⏱️ ~\${readingTime.minutes} min read</span>
+                <span class="unit-meta-badge">📝 \${readingTime.words.toLocaleString()} words</span>
+                \${isCompleted ? '<span class="unit-meta-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border-color: rgba(16, 185, 129, 0.4);">✓ Completed</span>' : ''}
+              </div>
+              <h1>\${escapeHtml(unit.title)}</h1>
+            </div>
+            <button type="button" class="unit-complete-toggle-btn\${isCompleted ? ' completed' : ''}" onclick="toggleUnitComplete(\${activeUnitIndex})">
+              \${isCompleted ? '✓ Completed' : 'Mark as Complete'}
+            </button>
+          </div>
           \${cleanDesc ? \`<div class="unit-description">\${cleanDesc}</div>\` : ''}
         </header>
       \`;
@@ -1407,15 +2206,20 @@ const HTMLBuilder = {
         html += \`
           <section class="section-card" id="sec-overview">
             <div class="section-card-header">
-              <span class="tag tag-overview">Overview</span>
-              <h2>Course &amp; Unit Information</h2>
+              <div class="section-card-title-group">
+                <span class="tag tag-overview">Overview</span>
+                <h2>Course &amp; Unit Information</h2>
+              </div>
             </div>
             <div class="topic-list">
               \${generalTopics.map(t => \`
-                <div class="topic-item">
+                <div class="topic-item" id="topic-\${t.id || escapeHtml(t.title)}">
                   <h3>\${escapeHtml(t.title)}</h3>
                   \${t.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(t.contentHtml, t.title)}</div>\` : ''}
-                  \${t.url ? \`<p><a href="\${t.url}" target="_blank" rel="noopener">Open Live Brightspace Topic ↗</a></p>\` : ''}
+                  <div class="topic-actions-row">
+                    \${t.url ? \`<a href="\${t.url}" target="_blank" rel="noopener" class="topic-action-btn">Open Topic on Brightspace ↗</a>\` : ''}
+                    <button type="button" class="topic-action-btn" onclick="copyTopicLink('topic-\${t.id || escapeHtml(t.title)}')">🔗 Copy Link</button>
+                  </div>
                 </div>
               \`).join('')}
             </div>
@@ -1428,8 +2232,10 @@ const HTMLBuilder = {
         html += \`
           <section class="section-card" id="sec-readings">
             <div class="section-card-header">
-              <span class="tag tag-reading">Reading</span>
-              <h2>Reading Assignments</h2>
+              <div class="section-card-title-group">
+                <span class="tag tag-reading">Reading</span>
+                <h2>Reading Assignments</h2>
+              </div>
             </div>
             \${isShareable ? \`
               <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 10px 14px; font-size: 12px; color: var(--text-main); margin-bottom: 8px;">
@@ -1438,10 +2244,15 @@ const HTMLBuilder = {
             \` : ''}
             <div class="topic-list">
               \${unit.readings.map(r => \`
-                <div class="topic-item">
+                <div class="topic-item" id="reading-\${r.id || escapeHtml(r.title)}">
                   <h3>\${escapeHtml(r.title)}</h3>
                   \${r.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(r.contentHtml, r.title)}</div>\` : ''}
-                  \${r.url ? \`<p><a href="\${r.url}" target="_blank" rel="noopener">Open Live Brightspace Resource ↗</a></p>\` : ''}
+                  <div class="topic-actions-row">
+                    \${r.url ? \`<a href="\${r.url}" target="_blank" rel="noopener" class="topic-action-btn">Open Live Brightspace Resource ↗</a>\` : ''}
+                    <button type="button" class="topic-action-btn" onclick='copyApaCitation(\${JSON.stringify(r.title)}, \${JSON.stringify(r.contentHtml || "")}, \${JSON.stringify(r.url || "")})'>
+                      📋 Copy APA Citation
+                    </button>
+                  </div>
                 </div>
               \`).join('')}
             </div>
@@ -1449,22 +2260,26 @@ const HTMLBuilder = {
         \`;
       }
 
-      // Discussion & Assignments & Quizzes ONLY rendered in Full Archive mode
+      // Full Archive specific sections (Discussions, Assignments, Quizzes)
       if (!isShareable) {
         // Discussion Forum Section
         if (unit.discussions && unit.discussions.length > 0) {
           html += \`
             <section class="section-card" id="sec-discussions">
               <div class="section-card-header">
-                <span class="tag tag-discussion">Discussion</span>
-                <h2>Discussion Forum Prompt</h2>
+                <div class="section-card-title-group">
+                  <span class="tag tag-discussion">Discussion</span>
+                  <h2>Discussion Forum Prompt</h2>
+                </div>
               </div>
               <div class="topic-list">
                 \${unit.discussions.map(d => \`
-                  <div class="topic-item">
+                  <div class="topic-item" id="discussion-\${d.id || escapeHtml(d.title)}">
                     <h3>\${escapeHtml(d.title)}</h3>
                     \${d.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(d.contentHtml, d.title)}</div>\` : ''}
-                    \${d.url ? \`<p><a href="\${d.url}" target="_blank" rel="noopener">Open Discussion Thread on Brightspace ↗</a></p>\` : ''}
+                    <div class="topic-actions-row">
+                      \${d.url ? \`<a href="\${d.url}" target="_blank" rel="noopener" class="topic-action-btn">Open Discussion Thread on Brightspace ↗</a>\` : ''}
+                    </div>
                   </div>
                 \`).join('')}
               </div>
@@ -1477,15 +2292,19 @@ const HTMLBuilder = {
           html += \`
             <section class="section-card" id="sec-assignments">
               <div class="section-card-header">
-                <span class="tag tag-assignment">Assignment</span>
-                <h2>Assignment Activity</h2>
+                <div class="section-card-title-group">
+                  <span class="tag tag-assignment">Assignment</span>
+                  <h2>Assignment Activity</h2>
+                </div>
               </div>
               <div class="topic-list">
                 \${unit.assignments.map(a => \`
-                  <div class="topic-item">
+                  <div class="topic-item" id="assignment-\${a.id || escapeHtml(a.title)}">
                     <h3>\${escapeHtml(a.title)}</h3>
                     \${a.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(a.contentHtml, a.title)}</div>\` : ''}
-                    \${a.url ? \`<p><a href="\${a.url}" target="_blank" rel="noopener">Open Assignment Submission on Brightspace ↗</a></p>\` : ''}
+                    <div class="topic-actions-row">
+                      \${a.url ? \`<a href="\${a.url}" target="_blank" rel="noopener" class="topic-action-btn">Open Assignment Submission on Brightspace ↗</a>\` : ''}
+                    </div>
                   </div>
                 \`).join('')}
               </div>
@@ -1493,7 +2312,7 @@ const HTMLBuilder = {
           \`;
         }
 
-        // Quizzes Sub-sections segmentations
+        // Quizzes Sub-sections
         const allQuizzes = unit.quizzes || [];
         const knowledgeChecks = allQuizzes.filter(q => q.title.toLowerCase().includes('knowledge check'));
         const selfQuizzes = allQuizzes.filter(q => {
@@ -1505,100 +2324,52 @@ const HTMLBuilder = {
           return !lower.includes('knowledge check') && !lower.includes('self-quiz') && !lower.includes('self quiz');
         });
 
-        // Knowledge Check Section
+        // Knowledge Checks
         if (knowledgeChecks.length > 0) {
           html += \`
             <section class="section-card" id="sec-knowledge-check">
               <div class="section-card-header">
-                <span class="tag tag-quiz" style="background-color: #3b82f6;">Knowledge Check</span>
-                <h2>Knowledge Check</h2>
+                <div class="section-card-title-group">
+                  <span class="tag tag-quiz" style="background-color: #3b82f6;">Knowledge Check</span>
+                  <h2>Knowledge Check</h2>
+                </div>
               </div>
               <div class="quiz-group">
-                \${knowledgeChecks.map(q => \`
-                  <div class="quiz-container-item" style="margin-top: 12px;">
-                    <details class="quiz-details-accordion">
-                      <summary class="quiz-summary">
-                        <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
-                          ❓ <strong>\${escapeHtml(q.title)}</strong>
-                        </span>
-                        <span class="view-questions-badge">Show Questions &amp; Answers</span>
-                      </summary>
-                      <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
-                        \${q.contentHtml || \`
-                          <div class="quiz-notice">
-                            <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
-                          </div>
-                        \`}
-                      </div>
-                    </details>
-                  </div>
-                \`).join('')}
+                \${knowledgeChecks.map(q => renderQuizItem(q)).join('')}
               </div>
             </section>
           \`;
         }
 
-        // Self-Quiz Section
+        // Self-Quiz
         if (selfQuizzes.length > 0) {
           html += \`
             <section class="section-card" id="sec-self-quiz">
               <div class="section-card-header">
-                <span class="tag tag-quiz" style="background-color: #10b981;">Self-Quiz</span>
-                <h2>Self-Quiz</h2>
+                <div class="section-card-title-group">
+                  <span class="tag tag-quiz" style="background-color: #10b981;">Self-Quiz</span>
+                  <h2>Self-Quiz</h2>
+                </div>
               </div>
               <div class="quiz-group">
-                \${selfQuizzes.map(q => \`
-                  <div class="quiz-container-item" style="margin-top: 12px;">
-                    <details class="quiz-details-accordion">
-                      <summary class="quiz-summary">
-                        <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
-                          ❓ <strong>\${escapeHtml(q.title)}</strong>
-                        </span>
-                        <span class="view-questions-badge">Show Questions &amp; Answers</span>
-                      </summary>
-                      <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
-                        \${q.contentHtml || \`
-                          <div class="quiz-notice">
-                            <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
-                          </div>
-                        \`}
-                      </div>
-                    </details>
-                  </div>
-                \`).join('')}
+                \${selfQuizzes.map(q => renderQuizItem(q)).join('')}
               </div>
             </section>
           \`;
         }
 
-        // Assessment Section
+        // Assessments
         if (assessmentQuizzes.length > 0) {
           html += \`
             <section class="section-card" id="sec-assessments">
               <div class="section-card-header">
-                <span class="tag tag-quiz">Assessment</span>
-                <h2>Assessment Section</h2>
+                <div class="section-card-title-group">
+                  <span class="tag tag-quiz">Assessment</span>
+                  <h2>Assessment Section</h2>
+                </div>
               </div>
               <div class="quiz-group">
-                \${assessmentQuizzes.map(q => \`
-                  <div class="quiz-container-item" style="margin-top: 12px;">
-                    <details class="quiz-details-accordion">
-                      <summary class="quiz-summary">
-                        <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
-                          ❓ <strong>\${escapeHtml(q.title)}</strong>
-                        </span>
-                        <span class="view-questions-badge">Show Questions &amp; Answers</span>
-                      </summary>
-                      <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
-                        \${q.contentHtml || \`
-                          <div class="quiz-notice">
-                            <strong>Notice:</strong> Quiz questions were not extracted. No attempt details available offline.
-                          </div>
-                        \`}
-                      </div>
-                    </details>
-                  </div>
-                \`).join('')}
+                \${assessmentQuizzes.map(q => renderQuizItem(q)).join('')}
               </div>
             </section>
           \`;
@@ -1610,15 +2381,19 @@ const HTMLBuilder = {
         html += \`
           <section class="section-card" id="sec-conclusion">
             <div class="section-card-header">
-              <span class="tag tag-overview" style="background-color: #64748b;">Conclusion</span>
-              <h2>Conclusion</h2>
+              <div class="section-card-title-group">
+                <span class="tag tag-overview" style="background-color: #64748b;">Conclusion</span>
+                <h2>Conclusion</h2>
+              </div>
             </div>
             <div class="topic-list">
               \${conclusionTopics.map(t => \`
-                <div class="topic-item">
+                <div class="topic-item" id="conclusion-\${t.id || escapeHtml(t.title)}">
                   <h3>\${escapeHtml(t.title)}</h3>
                   \${t.contentHtml ? \`<div class="topic-body">\${cleanContentHtml(t.contentHtml, t.title)}</div>\` : ''}
-                  \${t.url ? \`<p><a href="\${t.url}" target="_blank" rel="noopener">Open Live Brightspace Topic ↗</a></p>\` : ''}
+                  <div class="topic-actions-row">
+                    \${t.url ? \`<a href="\${t.url}" target="_blank" rel="noopener" class="topic-action-btn">Open Topic on Brightspace ↗</a>\` : ''}
+                  </div>
                 </div>
               \`).join('')}
             </div>
@@ -1626,12 +2401,15 @@ const HTMLBuilder = {
         \`;
       }
 
-      // Attachments & Downloadable Files / Online Resources
+      // Attachments & Downloadable Files
       if (unit.attachments && unit.attachments.length > 0) {
         html += \`
           <section class="section-card" id="sec-attachments">
             <div class="section-card-header">
-              <h2>\${downloadAssets ? '📎 Attachments &amp; Files' : '🌐 Online Attachments &amp; Resources'}</h2>
+              <div class="section-card-title-group">
+                <span class="tag tag-attachment">Files</span>
+                <h2>\${downloadAssets ? '📎 Attachments &amp; Files' : '🌐 Online Attachments &amp; Resources'}</h2>
+              </div>
             </div>
             \${!downloadAssets ? \`
               <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
@@ -1670,6 +2448,38 @@ const HTMLBuilder = {
         \`;
       }
 
+      // Bottom Unit Navigation (Prev / Next Unit)
+      const prevUnit = activeUnitIndex > 0 ? units[activeUnitIndex - 1] : null;
+      const nextUnit = activeUnitIndex < units.length - 1 ? units[activeUnitIndex + 1] : null;
+
+      html += \`
+        <div class="unit-bottom-nav">
+          <div class="unit-completion-card">
+            <div>
+              <div style="font-weight: 600; font-size: 14px;">Ready to wrap up this unit?</div>
+              <div style="font-size: 12px; color: var(--text-muted);">Track your weekly study progress.</div>
+            </div>
+            <button type="button" class="unit-complete-toggle-btn\${isCompleted ? ' completed' : ''}" onclick="toggleUnitComplete(\${activeUnitIndex})">
+              \${isCompleted ? '✓ Unit Completed' : 'Mark Unit as Completed'}
+            </button>
+          </div>
+          <div class="unit-prev-next-grid">
+            \${prevUnit ? \`
+              <button type="button" class="unit-nav-card prev" onclick="goToUnit(\${activeUnitIndex - 1})">
+                <span class="unit-nav-card-label">← Previous Unit</span>
+                <span class="unit-nav-card-title">\${escapeHtml(prevUnit.title)}</span>
+              </button>
+            \` : '<div></div>'}
+            \${nextUnit ? \`
+              <button type="button" class="unit-nav-card next" onclick="goToUnit(\${activeUnitIndex + 1})">
+                <span class="unit-nav-card-label">Next Unit →</span>
+                <span class="unit-nav-card-title">\${escapeHtml(nextUnit.title)}</span>
+              </button>
+            \` : '<div></div>'}
+          </div>
+        </div>
+      \`;
+
       // Appended Community & Developer Footer
       html += \`
         <footer class="exported-page-footer">
@@ -1687,7 +2497,6 @@ const HTMLBuilder = {
       \`;
 
       main.innerHTML = html;
-      main.scrollTop = 0;
       setupScrollSpy();
 
       // Render math formulas if KaTeX is loaded
@@ -1702,10 +2511,11 @@ const HTMLBuilder = {
             ],
             throwOnError: false
           });
-        } catch (e) {
-          console.warn('Math rendering error:', e);
-        }
+        } catch (e) {}
       }
+
+      // Enhance code blocks with syntax highlighting and 1-click copy
+      enhanceCodeBlocks(main);
 
       // Add event listeners for quiz toggle badges
       main.querySelectorAll('.quiz-details-accordion').forEach(details => {
@@ -1741,6 +2551,50 @@ const HTMLBuilder = {
       });
     }
 
+    function renderQuizItem(q) {
+      const hasContent = q.contentHtml && q.contentHtml.includes('offline-quiz-question');
+      
+      if (!hasContent) {
+        return \`
+          <div class="quiz-empty-guide-card">
+            <div class="quiz-guide-icon">📝</div>
+            <div class="quiz-guide-content">
+              <h4>\${escapeHtml(q.title)}</h4>
+              <p>Questions and answers have not been downloaded because this quiz was not attempted prior to export. Take your first attempt on Brightspace, then re-export this course to unlock offline self-testing &amp; explanations!</p>
+              \${q.url ? \`<a href="\${q.url}" target="_blank" rel="noopener" class="quiz-direct-btn">Take Quiz on Brightspace ↗</a>\` : ''}
+            </div>
+          </div>
+        \`;
+      }
+
+      return \`
+        <div class="quiz-container-item" style="margin-top: 12px;">
+          <details class="quiz-details-accordion" open>
+            <summary class="quiz-summary">
+              <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-main);">
+                ❓ <strong>\${escapeHtml(q.title)}</strong>
+              </span>
+              <span class="view-questions-badge">Hide Questions &amp; Answers</span>
+            </summary>
+            <div class="quiz-content-wrapper" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+              \${q.contentHtml}
+            </div>
+          </details>
+        </div>
+      \`;
+    }
+
+    function copyTopicLink(elementId) {
+      const el = document.getElementById(elementId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('highlight-pulse');
+        setTimeout(() => el.classList.remove('highlight-pulse'), 3000);
+      }
+      showToast('🔗 Section focused & highlighted');
+    }
+
+    // Modal controls
     function openDocModal(fileUrl, title) {
       const modal = document.getElementById('doc-modal');
       const iframe = document.getElementById('doc-modal-iframe');
@@ -1756,7 +2610,6 @@ const HTMLBuilder = {
 
       modal.classList.add('open');
       modal.setAttribute('aria-hidden', 'false');
-      document.body.style.overflow = 'hidden';
     }
 
     function closeDocModal() {
@@ -1766,66 +2619,371 @@ const HTMLBuilder = {
       modal.classList.remove('open');
       modal.setAttribute('aria-hidden', 'true');
       if (iframe) iframe.src = '';
-      document.body.style.overflow = '';
     }
 
-    const docModalCloseBtn = document.getElementById('doc-modal-close-btn');
-    if (docModalCloseBtn) {
-      docModalCloseBtn.addEventListener('click', closeDocModal);
-    }
-    const docModalEl = document.getElementById('doc-modal');
-    if (docModalEl) {
-      docModalEl.addEventListener('click', (e) => {
-        if (e.target && e.target.id === 'doc-modal') closeDocModal();
+    // Full-Text Search Engine
+    let searchIndex = [];
+    function buildSearchIndex() {
+      searchIndex = [];
+      units.forEach((unit, uIdx) => {
+        // Index unit overview
+        if (unit.description) {
+          searchIndex.push({
+            unitIndex: uIdx,
+            unitTitle: unit.title,
+            sectionId: 'sec-header',
+            tag: 'Unit Overview',
+            title: unit.title,
+            text: unit.description.replace(/<[^>]+>/g, ' ')
+          });
+        }
+        // Index general topics
+        (unit.topics || []).forEach(t => {
+          searchIndex.push({
+            unitIndex: uIdx,
+            unitTitle: unit.title,
+            sectionId: 'sec-overview',
+            topicId: 'topic-' + (t.id || t.title),
+            tag: 'Topic',
+            title: t.title,
+            text: (t.contentHtml || '').replace(/<[^>]+>/g, ' ')
+          });
+        });
+        // Index readings
+        (unit.readings || []).forEach(r => {
+          searchIndex.push({
+            unitIndex: uIdx,
+            unitTitle: unit.title,
+            sectionId: 'sec-readings',
+            topicId: 'reading-' + (r.id || r.title),
+            tag: 'Reading',
+            title: r.title,
+            text: (r.contentHtml || '').replace(/<[^>]+>/g, ' ')
+          });
+        });
+        // Index discussions
+        (unit.discussions || []).forEach(d => {
+          searchIndex.push({
+            unitIndex: uIdx,
+            unitTitle: unit.title,
+            sectionId: 'sec-discussions',
+            topicId: 'discussion-' + (d.id || d.title),
+            tag: 'Discussion',
+            title: d.title,
+            text: (d.contentHtml || '').replace(/<[^>]+>/g, ' ')
+          });
+        });
+        // Index assignments
+        (unit.assignments || []).forEach(a => {
+          searchIndex.push({
+            unitIndex: uIdx,
+            unitTitle: unit.title,
+            sectionId: 'sec-assignments',
+            topicId: 'assignment-' + (a.id || a.title),
+            tag: 'Assignment',
+            title: a.title,
+            text: (a.contentHtml || '').replace(/<[^>]+>/g, ' ')
+          });
+        });
       });
     }
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeDocModal();
-    });
 
-    function escapeHtml(str) {
-      if (!str) return '';
-      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    function openSearchModal() {
+      const modal = document.getElementById('search-modal');
+      const input = document.getElementById('modal-search-input');
+      if (!modal || !input) return;
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+      input.value = '';
+      input.focus();
+      renderSearchResults('');
     }
 
-    document.getElementById('search-input').addEventListener('input', (e) => {
-      const q = e.target.value.toLowerCase().trim();
+    function closeSearchModal() {
+      const modal = document.getElementById('search-modal');
+      if (!modal) return;
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+    }
+
+    function renderSearchResults(query) {
+      const container = document.getElementById('modal-search-results');
+      if (!container) return;
+
+      const q = query.trim().toLowerCase();
       if (!q) {
-        renderNav(units);
+        container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 30px; font-size: 13px;">Type anything to search across all course units, readings, and topics.</div>';
         return;
       }
-      const filtered = units.filter(u => 
-        u.title.toLowerCase().includes(q) || 
-        (u.topics && u.topics.some(t => t.title.toLowerCase().includes(q)))
-      );
-      renderNav(filtered);
-    });
 
-    document.getElementById('theme-toggle').addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme');
-      const next = current === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-    });
+      const words = q.split(/\\s+/);
+      const matches = [];
 
-    // Back to top floating button scroll listener
-    const mainEl = document.getElementById('main-content');
-    const backToTopBtn = document.getElementById('back-to-top-btn');
-    if (mainEl && backToTopBtn) {
-      mainEl.addEventListener('scroll', () => {
-        if (mainEl.scrollTop > 250) {
-          backToTopBtn.classList.add('visible');
-        } else {
-          backToTopBtn.classList.remove('visible');
+      searchIndex.forEach(item => {
+        const full = (item.title + ' ' + item.text).toLowerCase();
+        const matchesAll = words.every(w => full.includes(w));
+        if (matchesAll) {
+          // Find snippet around first matching word
+          let snippet = '';
+          const idx = full.indexOf(words[0]);
+          if (idx !== -1) {
+            const start = Math.max(0, idx - 50);
+            const end = Math.min(item.text.length, idx + 100);
+            snippet = (start > 0 ? '...' : '') + item.text.substring(start, end).trim() + (end < item.text.length ? '...' : '');
+          }
+          matches.push({ item, snippet });
         }
       });
 
-      backToTopBtn.addEventListener('click', () => {
-        mainEl.scrollTo({ top: 0, behavior: 'smooth' });
+      if (matches.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 30px; font-size: 13px;">No results found for "' + escapeHtml(query) + '"</div>';
+        return;
+      }
+
+      container.innerHTML = matches.slice(0, 30).map((m, idx) => {
+        // Highlight query keywords in title & snippet
+        let highlightedTitle = escapeHtml(m.item.title);
+        let highlightedSnippet = escapeHtml(m.snippet);
+        words.forEach(w => {
+          if (w.length > 1) {
+            const regex = new RegExp('(' + w.replace(/[-\\/\\\\^$*+?.()|[\\\]{}]/g, '\\\\$&') + ')', 'gi');
+            highlightedTitle = highlightedTitle.replace(regex, '<span class="search-highlight">$1</span>');
+            highlightedSnippet = highlightedSnippet.replace(regex, '<span class="search-highlight">$1</span>');
+          }
+        });
+
+        return \`
+          <div class="search-result-item" onclick="jumpToSearchResult(\${m.item.unitIndex}, '\${m.item.sectionId || ''}', '\${m.item.topicId || ''}')">
+            <div class="search-res-top">
+              <span class="search-res-unit">\${escapeHtml(m.item.unitTitle)}</span>
+              <span class="search-res-tag">\${escapeHtml(m.item.tag)}</span>
+            </div>
+            <div class="search-res-title">\${highlightedTitle}</div>
+            \${highlightedSnippet ? \`<div class="search-res-snippet">\${highlightedSnippet}</div>\` : ''}
+          </div>
+        \`;
+      }).join('');
+    }
+
+    function jumpToSearchResult(unitIdx, sectionId, topicId) {
+      closeSearchModal();
+      goToUnit(unitIdx);
+      setTimeout(() => {
+        if (topicId) {
+          copyTopicLink(topicId);
+        } else if (sectionId) {
+          scrollToSection(sectionId);
+        }
+      }, 150);
+    }
+
+    function openShortcutsModal() {
+      const modal = document.getElementById('shortcuts-modal');
+      if (modal) modal.classList.add('open');
+    }
+    function closeShortcutsModal() {
+      const modal = document.getElementById('shortcuts-modal');
+      if (modal) modal.classList.remove('open');
+    }
+
+
+    function enhanceCodeBlocks(container) {
+      if (!container) return;
+      container.querySelectorAll('pre').forEach(pre => {
+        if (pre.closest('.code-block-wrapper')) return;
+
+        let code = pre.querySelector('code');
+        if (!code) {
+          const rawText = pre.innerText || pre.textContent || '';
+          pre.innerHTML = '';
+          code = document.createElement('code');
+          code.textContent = rawText;
+          pre.appendChild(code);
+        }
+
+        let lang = '';
+        const fullClass = (pre.className + ' ' + code.className).toLowerCase();
+        const match = fullClass.match(/language-(\\w+)|lang-(\\w+)|brush:\\s*(\\w+)/i);
+        if (match) {
+          lang = match[1] || match[2] || match[3];
+        } else {
+          const txt = code.textContent.trim();
+          if (/^\\s*(def |import |from |class |print\\(|if __name__)/m.test(txt)) lang = 'python';
+          else if (/^\\s*(public class|System\\.out\\.println|import java\\.)/m.test(txt)) lang = 'java';
+          else if (/^\\s*(#include <|int main\\(|std::cout|namespace )/m.test(txt)) lang = 'cpp';
+          else if (/^\\s*(SELECT |INSERT INTO|UPDATE |DELETE FROM|CREATE TABLE|ALTER TABLE)/im.test(txt)) lang = 'sql';
+          else if (/^\\s*(<!DOCTYPE|<html|<div|<script|<style)/im.test(txt)) lang = 'markup';
+          else if (/^\\s*(\\$|#!\\/bin\\/bash|npm |pip |git |sudo |cd |ls -)/m.test(txt)) lang = 'bash';
+          else if (/^\\s*(function |const |let |var |console\\.log)/m.test(txt)) lang = 'javascript';
+          else lang = 'clike';
+        }
+
+        if (lang) {
+          code.className = 'language-' + lang;
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'code-block-wrapper';
+        pre.parentNode.insertBefore(wrapper, pre);
+
+        const header = document.createElement('div');
+        header.className = 'code-block-header';
+
+        const badge = document.createElement('span');
+        badge.className = 'code-lang-badge';
+        badge.textContent = (lang || 'code').toUpperCase();
+
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'code-copy-btn';
+        copyBtn.textContent = '📋 Copy Code';
+        copyBtn.onclick = () => {
+          navigator.clipboard.writeText(code.textContent).then(() => {
+            showToast('📋 Code copied to clipboard!');
+            copyBtn.textContent = '✅ Copied!';
+            setTimeout(() => copyBtn.textContent = '📋 Copy Code', 2000);
+          });
+        };
+
+        header.appendChild(badge);
+        header.appendChild(copyBtn);
+        wrapper.appendChild(header);
+        wrapper.appendChild(pre);
+
+        if (window.Prism) {
+          try { Prism.highlightElement(code); } catch (e) {}
+        }
       });
     }
 
-    renderNav();
-    renderMain();
+    // Initialize Event Listeners
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSavedState();
+      buildSearchIndex();
+      renderNav();
+      renderMain();
+
+      // Sidebar collapse / Focus mode
+      const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
+      const focusBtnLabel = document.getElementById('focus-btn-label');
+      const sidebar = document.getElementById('app-sidebar');
+
+      if (toggleSidebarBtn && sidebar) {
+        toggleSidebarBtn.addEventListener('click', () => {
+          sidebar.classList.toggle('collapsed');
+          const isCollapsed = sidebar.classList.contains('collapsed');
+          toggleSidebarBtn.classList.toggle('active', isCollapsed);
+          if (focusBtnLabel) focusBtnLabel.textContent = isCollapsed ? 'Sidebar' : 'Focus Mode';
+          try {
+            localStorage.setItem('uop_focus_mode', isCollapsed.toString());
+          } catch (e) {}
+        });
+      }
+
+      // Font size buttons
+      document.getElementById('font-decrease-btn').addEventListener('click', () => applyFontScale(currentFontScale - 0.08));
+      document.getElementById('font-increase-btn').addEventListener('click', () => applyFontScale(currentFontScale + 0.08));
+
+      // Theme toggle
+      document.getElementById('theme-toggle').addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('uop_theme', next); } catch (e) {}
+      });
+
+      // Search triggers
+      document.getElementById('open-search-btn').addEventListener('click', openSearchModal);
+      document.getElementById('modal-search-input').addEventListener('input', (e) => renderSearchResults(e.target.value));
+      document.getElementById('search-modal-close-btn').addEventListener('click', closeSearchModal);
+      document.getElementById('search-modal').addEventListener('click', (e) => {
+        if (e.target && e.target.id === 'search-modal') closeSearchModal();
+      });
+
+      // Shortcuts help
+      document.getElementById('shortcuts-help-btn').addEventListener('click', openShortcutsModal);
+      document.getElementById('shortcuts-modal-close-btn').addEventListener('click', closeShortcutsModal);
+      document.getElementById('shortcuts-modal').addEventListener('click', (e) => {
+        if (e.target && e.target.id === 'shortcuts-modal') closeShortcutsModal();
+      });
+
+      // Document modal
+      document.getElementById('doc-modal-close-btn').addEventListener('click', closeDocModal);
+      document.getElementById('doc-modal').addEventListener('click', (e) => {
+        if (e.target && e.target.id === 'doc-modal') closeDocModal();
+      });
+
+      // Filter sidebar units
+      document.getElementById('search-input').addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase().trim();
+        if (!q) {
+          renderNav(units);
+          return;
+        }
+        const filtered = units.filter(u => 
+          u.title.toLowerCase().includes(q) || 
+          (u.topics && u.topics.some(t => t.title.toLowerCase().includes(q)))
+        );
+        renderNav(filtered);
+      });
+
+      // Floating Back-to-Top Button
+      const mainEl = document.getElementById('main-content');
+      const backToTopBtn = document.getElementById('back-to-top-btn');
+      if (mainEl && backToTopBtn) {
+        mainEl.addEventListener('scroll', () => {
+          if (mainEl.scrollTop > 250) {
+            backToTopBtn.classList.add('visible');
+          } else {
+            backToTopBtn.classList.remove('visible');
+          }
+        });
+        backToTopBtn.addEventListener('click', () => {
+          mainEl.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      }
+
+      // Global Keyboard Shortcuts
+      window.addEventListener('keydown', (e) => {
+        const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+        if (activeTag === 'input' || activeTag === 'textarea') {
+          if (e.key === 'Escape') {
+            closeSearchModal();
+            closeDocModal();
+            closeShortcutsModal();
+          }
+          return;
+        }
+
+        if (e.key === 'Escape') {
+          closeSearchModal();
+          closeDocModal();
+          closeShortcutsModal();
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+          e.preventDefault();
+          openSearchModal();
+        } else if (e.key === '/') {
+          e.preventDefault();
+          openSearchModal();
+        } else if (e.key === '[' || e.key === 'p') {
+          if (activeUnitIndex > 0) goToUnit(activeUnitIndex - 1);
+        } else if (e.key === ']' || e.key === 'n') {
+          if (activeUnitIndex < units.length - 1) goToUnit(activeUnitIndex + 1);
+        } else if (e.key === 'f') {
+          document.getElementById('toggle-sidebar-btn').click();
+        } else if (e.key === 't') {
+          document.getElementById('theme-toggle').click();
+        } else if (e.key === '+' || e.key === '=') {
+          applyFontScale(currentFontScale + 0.08);
+        } else if (e.key === '-') {
+          applyFontScale(currentFontScale - 0.08);
+        } else if (e.key === '0') {
+          applyFontScale(1.0);
+        } else if (e.key === '?') {
+          openShortcutsModal();
+        }
+      });
+    });
   </script>
 </body>
 </html>`;

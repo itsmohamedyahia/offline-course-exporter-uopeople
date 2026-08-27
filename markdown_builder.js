@@ -1,6 +1,7 @@
 /**
  * Markdown Builder Module
- * Converts course materials from HTML to Markdown and compiles them into a structured folder layout.
+ * Converts course materials from HTML to Markdown and compiles them into a structured folder layout,
+ * including a Master Course Reading Matrix in README.md and a consolidated Master_Course_Complete.md companion file.
  */
 const MarkdownBuilder = {
   sanitizeFolderName(name) {
@@ -48,7 +49,8 @@ const MarkdownBuilder = {
       return style;
     });
 
-    // Clean up empty paragraphs/spans left over
+    // 5. Clean up non-breaking spaces and empty tags
+    clean = clean.replace(/&nbsp;/gi, ' ').replace(/&#160;/gi, ' ');
     clean = clean.replace(/<p>\s*<\/p>/gi, '');
     clean = clean.replace(/<span[^>]*>\s*<\/span>/gi, '');
 
@@ -58,6 +60,7 @@ const MarkdownBuilder = {
   cleanUnitDescription(htmlStr, title = '') {
     if (!htmlStr) return '';
     let clean = htmlStr;
+    clean = clean.replace(/&nbsp;/gi, ' ').replace(/&#160;/gi, ' ');
     clean = clean.replace(/<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>/gi, (match) => {
       const headerText = match.replace(/<[^>]+>/g, '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
       const cleanTitle = (title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -74,12 +77,44 @@ const MarkdownBuilder = {
     return clean;
   },
 
+  cleanMarkdown(md) {
+    if (!md) return '';
+    let clean = md;
+
+    // 1. Replace non-breaking spaces
+    clean = clean.replace(/&nbsp;/gi, ' ').replace(/&#160;/gi, ' ');
+
+    // 2. Fix double list bullets: "- - " or "* - " or "1. - "
+    clean = clean.replace(/^(\s*[-*]|\s*\d+\.)\s*[-*•]\s+/gm, '$1 ');
+    clean = clean.replace(/^(\s*[-*])\s+-\s+/gm, '$1 ');
+
+    // 3. Remove nested bold or italic markers inside markdown headings (# **Heading** -> # Heading)
+    clean = clean.replace(/^(#{1,6}\s+)\*\*(.*?)\*\*\s*$/gm, '$1$2');
+    clean = clean.replace(/^(#{1,6}\s+)\*(.*?)\*\s*$/gm, '$1$2');
+
+    // 4. Ensure proper spacing around italic asterisks touching punctuation like (2019).*[Title]*
+    clean = clean.replace(/([.)\]])\*([A-Za-z0-9])/g, '$1 *$2');
+    clean = clean.replace(/([A-Za-z0-9])\*([(\[])/g, '$1* $2');
+
+    // 5. Ensure proper spacing around inline markdown links: [Link](url)word -> [Link](url) word
+    clean = clean.replace(/(\]\([^)]+\))([A-Za-z0-9])/g, '$1 $2');
+
+    // 6. Clean up duplicate adjacent YouTube image + text link stacks
+    clean = clean.replace(/(\[!\[Watch on YouTube\]\([^)]+\)\]\((https?:\/\/[^)]+)\))\s*\n+\s*\[▶ Watch on YouTube ↗\]\(\2\)/g, '$1\n\n*[▶ Watch on YouTube ↗]($2)*');
+
+    // 7. Clean up excessive blank lines
+    clean = clean.replace(/\n{3,}/g, '\n\n');
+
+    return clean.trim();
+  },
+
   htmlToMarkdown(htmlStr) {
     if (!htmlStr) return '';
     try {
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlStr, 'text/html');
-      return this.nodeToMarkdown(doc.body).trim();
+      const rawMd = this.nodeToMarkdown(doc.body).trim();
+      return this.cleanMarkdown(rawMd);
     } catch (e) {
       console.error('Error converting HTML to Markdown:', e);
       return htmlStr; // Fallback
@@ -148,19 +183,21 @@ const MarkdownBuilder = {
         return `\`${childrenMarkdown.trim()}\``;
       case 'pre':
         return `\n\`\`\`\n${node.textContent}\n\`\`\`\n`;
-      case 'a':
+      case 'a': {
         const href = node.getAttribute('href') || '';
         const linkText = childrenMarkdown.trim() || href;
         return href ? `[${linkText}](${href})` : childrenMarkdown;
-      case 'img':
+      }
+      case 'img': {
         const src = node.getAttribute('src') || '';
         const alt = node.getAttribute('alt') || 'image';
         return src ? `\n![${alt}](${src})\n` : '';
+      }
       case 'ul':
         return `\n${childrenMarkdown}\n`;
       case 'ol':
         return `\n${childrenMarkdown}\n`;
-      case 'li':
+      case 'li': {
         const parent = node.parentNode;
         let prefix = '- ';
         if (parent && parent.tagName.toLowerCase() === 'ol') {
@@ -171,7 +208,10 @@ const MarkdownBuilder = {
         for (const child of node.childNodes) {
           innerMd += this.nodeToMarkdown(child);
         }
-        return `${prefix}${innerMd.trim()}\n`;
+        // Strip any redundant leading dashes or bullets to prevent "- - "
+        const cleanInner = innerMd.trim().replace(/^[-*•]\s+/, '');
+        return `${prefix}${cleanInner}\n`;
+      }
       case 'blockquote':
         return `\n> ${childrenMarkdown.trim().replace(/\n/g, '\n> ')}\n\n`;
       case 'hr':
@@ -196,15 +236,14 @@ const MarkdownBuilder = {
           const watchBtn = node.querySelector('.watch-on-youtube-btn');
           const iframe = node.querySelector('iframe');
           let videoMd = '\n\n';
-          if (iframe) {
-            const iframeSrc = iframe.getAttribute('src');
-            videoMd += `[📺 Embedded Video](${iframeSrc})\n`;
-          }
           if (watchBtn) {
             const watchUrl = watchBtn.getAttribute('href');
-            videoMd += `[▶ Watch on YouTube](${watchUrl})\n`;
+            videoMd += `[▶ Watch on YouTube ↗](${watchUrl})\n\n`;
+          } else if (iframe) {
+            const iframeSrc = iframe.getAttribute('src');
+            videoMd += `[📺 Embedded Video](${iframeSrc})\n\n`;
           }
-          return videoMd + '\n';
+          return videoMd;
         }
         if (node.classList.contains('rubric-container')) {
           return `\n\n${childrenMarkdown}\n\n`;
@@ -248,34 +287,102 @@ const MarkdownBuilder = {
     return md;
   },
 
+  isDuplicateTitle(parentTitle, childTitle) {
+    if (!childTitle || !parentTitle) return false;
+    const p = parentTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const c = childTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return p === c || p.includes(c) || c.includes(p) || c === 'overview' || c === 'readingassignment' || c === 'readingassignments';
+  },
+
   buildMarkdownZip(courseInfo, units, exportScope = 'full', downloadAssets = true) {
     const files = [];
     const isShareable = exportScope === 'shareable';
 
     // Helper: Add markdown file if it has content
     const addFile = (folderName, fileName, content) => {
-      files.push({
-        name: `${folderName}/${fileName}`,
-        content: content.trim()
-      });
+      const cleaned = this.cleanMarkdown(content);
+      if (cleaned) {
+        files.push({
+          name: `${folderName}/${fileName}`,
+          content: cleaned
+        });
+      }
     };
 
-    // Generate README.md at the root
+    // Calculate course summary stats
+    let totalTopics = 0;
+    let totalReadings = 0;
+    let totalAssignments = 0;
+    let totalQuizzes = 0;
+    let totalAttachments = 0;
+    const readingMatrix = [];
+
+    units.forEach((unit) => {
+      totalTopics += (unit.topics || []).length;
+      totalReadings += (unit.readings || []).length;
+      totalAssignments += (unit.assignments || []).length;
+      totalQuizzes += (unit.quizzes || []).length;
+      totalAttachments += (unit.attachments || []).length;
+
+      (unit.readings || []).forEach((r) => {
+        readingMatrix.push({
+          unit: unit.title,
+          title: r.title,
+          url: r.url || '#'
+        });
+      });
+      (unit.attachments || []).forEach((att) => {
+        readingMatrix.push({
+          unit: unit.title,
+          title: `📎 [Attachment] ${att.title}`,
+          url: att.url || '#'
+        });
+      });
+    });
+
+    // 1. Generate README.md at the root
     let readmeContent = `# ${courseInfo.name}${isShareable ? ' - Study Guide & Reading List' : ''}\n\n`;
-    readmeContent += `Exported from Brightspace on ${new Date().toLocaleDateString('en-US', {
+    readmeContent += `> Exported from Brightspace on **${new Date().toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
-    })}\n\n`;
+    })}**\n\n`;
 
     if (isShareable) {
+      readmeContent += `> [!NOTE]\n`;
       readmeContent += `> **Export Mode: Shareable Study Guide (Peer-Safe)**\n`;
       readmeContent += `> This package contains the course syllabus, unit overviews, and reading assignment references intended for preparation and study.\n`;
       readmeContent += `> Graded discussion questions, written assignment prompts, and assessment quizzes are excluded in compliance with academic policies.\n\n`;
     }
 
-    readmeContent += `## Course Structure\n\n`;
+    readmeContent += `## Course Overview\n\n`;
+    readmeContent += `| Metric | Count |\n`;
+    readmeContent += `| :--- | :--- |\n`;
+    readmeContent += `| **Total Units** | ${units.length} |\n`;
+    readmeContent += `| **Reading Items & Textbooks** | ${totalReadings} |\n`;
+    if (!isShareable) {
+      readmeContent += `| **Graded Discussions & Assignments** | ${totalAssignments} |\n`;
+      readmeContent += `| **Quizzes & Knowledge Checks** | ${totalQuizzes} |\n`;
+    }
+    readmeContent += `| **Downloaded Attachments** | ${totalAttachments} |\n\n`;
 
+    readmeContent += `## Course Structure & Navigation\n\n`;
+
+    // 2. Generate Master_Course_Complete.md Table of Contents first
+    let masterNotesContent = `# ${courseInfo.name} - Complete Course Notes\n\n`;
+    masterNotesContent += `> **Course Code:** ${courseInfo.code || courseInfo.name}  \n`;
+    masterNotesContent += `> **Export Date:** ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}  \n`;
+    masterNotesContent += `> **Format:** Consolidated All-In-One Study Document\n\n---\n\n`;
+    masterNotesContent += `## Table of Contents\n\n`;
+
+    units.forEach((unit) => {
+      const cleanTitle = (unit.title || '').replace(/[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, ' ').trim();
+      const unitAnchor = cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      masterNotesContent += `- [${cleanTitle}](#${unitAnchor})\n`;
+    });
+    masterNotesContent += `\n---\n\n`;
+
+    // 3. Loop through units to write individual files and append to Master Notes
     units.forEach((unit, unitIdx) => {
       const cleanTitle = (unit.title || '').replace(/[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, ' ').trim();
       const folderName = `${String(unitIdx + 1).padStart(2, '0')}_${this.sanitizeFolderName(cleanTitle)}`;
@@ -295,18 +402,29 @@ const MarkdownBuilder = {
       });
       conclusionTopics.forEach(t => { if (t.id) categorizedIds.add(t.id); });
 
+      // Start unit section in Master file
+      masterNotesContent += `# ${unit.title}\n\n`;
+
       // 1. Overview -> 01_Overview.md
       let overviewMd = `# ${unit.title} - Overview\n\n`;
       const cleanDesc = this.cleanUnitDescription(unit.description, unit.title);
       if (cleanDesc) {
-        overviewMd += `${this.htmlToMarkdown(cleanDesc)}\n\n`;
+        const descMd = this.htmlToMarkdown(cleanDesc);
+        overviewMd += `${descMd}\n\n`;
+        masterNotesContent += `## Unit Overview\n\n${descMd}\n\n`;
       }
       const generalTopics = (unit.topics || []).filter(t => !categorizedIds.has(t.id));
       if (generalTopics.length > 0) {
         generalTopics.forEach(t => {
-          overviewMd += `## ${t.title}\n\n`;
+          // Avoid duplicate subheaders if topic title is identical or redundant to unit overview
+          if (!this.isDuplicateTitle(unit.title, t.title) && generalTopics.length > 1) {
+            overviewMd += `## ${t.title}\n\n`;
+            masterNotesContent += `### ${t.title}\n\n`;
+          }
           if (t.contentHtml) {
-            overviewMd += `${this.htmlToMarkdown(this.cleanContentHtml(t.contentHtml, t.title))}\n\n`;
+            const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(t.contentHtml, t.title));
+            overviewMd += `${bodyMd}\n\n`;
+            masterNotesContent += `${bodyMd}\n\n`;
           }
           if (t.url) {
             overviewMd += `*Brightspace Link: [Open Topic ↗](${t.url})*\n\n`;
@@ -319,17 +437,24 @@ const MarkdownBuilder = {
       // 2. Readings -> 02_Readings.md
       if ((unit.readings && unit.readings.length > 0) || (unit.attachments && unit.attachments.length > 0)) {
         let md = `# ${unit.title} - Reading Assignments\n\n`;
+        masterNotesContent += `## 📖 Reading Assignments\n\n`;
         if (isShareable) {
-          md += `> [!TIP]\n`;
-          md += `> **Accessing Required Textbooks:** For proprietary textbooks and articles (e.g. LIRN library materials), please log into the official UoPeople Library portal and search for the titles using the citations listed below. Open Educational Resources (OER) and open-access links can be accessed directly online.\n\n---\n\n`;
+          const tip = `> [!TIP]\n> **Accessing Required Textbooks:** For proprietary textbooks and articles (e.g. LIRN library materials), please log into the official UoPeople Library portal and search for the titles using the citations listed below. Open Educational Resources (OER) and open-access links can be accessed directly online.\n\n---\n\n`;
+          md += tip;
+          masterNotesContent += tip;
         }
         (unit.readings || []).forEach(r => {
-          md += `## ${r.title}\n\n`;
+          if (!this.isDuplicateTitle(unit.title + ' Reading Assignment', r.title) && (unit.readings || []).length > 1) {
+            md += `## ${r.title}\n\n`;
+            masterNotesContent += `### ${r.title}\n\n`;
+          }
           if (r.url) {
             md += `*Brightspace Link: [Open Reading Topic ↗](${r.url})*\n\n`;
           }
           if (r.contentHtml) {
-            md += `${this.htmlToMarkdown(this.cleanContentHtml(r.contentHtml, r.title))}\n\n`;
+            const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(r.contentHtml, r.title));
+            md += `${bodyMd}\n\n`;
+            masterNotesContent += `${bodyMd}\n\n`;
           }
           md += `---\n\n`;
         });
@@ -338,15 +463,21 @@ const MarkdownBuilder = {
         if (unit.attachments && unit.attachments.length > 0) {
           if (downloadAssets) {
             md += `## 📎 Downloaded Attachments & Files\n\n`;
+            masterNotesContent += `### 📎 Attachments & Files\n\n`;
             unit.attachments.forEach(att => {
               const cleanFileName = att.localFileName || (att.title.replace(/[^a-zA-Z0-9_.-]/g, '_') + '.' + (att.ext || 'pdf'));
-              md += `- [📄 ${att.title}](assets/${cleanFileName})\n`;
+              const attLink = `- [📄 ${att.title}](assets/${cleanFileName})\n`;
+              md += attLink;
+              masterNotesContent += attLink;
             });
           } else {
             md += `## 🌐 Course Attachments & Online Resources\n\n`;
+            masterNotesContent += `### 🌐 Online Resources\n\n`;
             md += `> *Note: Offline file downloading was disabled during export. The links below direct to the live online Brightspace course resources.*\n\n`;
             unit.attachments.forEach(att => {
-              md += `- [🌐 📄 ${att.title} (Open Online ↗)](${att.url || '#'})\n`;
+              const attLink = `- [🌐 📄 ${att.title} (Open Online ↗)](${att.url || '#'})\n`;
+              md += attLink;
+              masterNotesContent += attLink;
             });
           }
           md += `\n---\n\n`;
@@ -360,13 +491,17 @@ const MarkdownBuilder = {
         // 3. Discussion -> 03_Discussions.md
         if (unit.discussions && unit.discussions.length > 0) {
           let md = `# ${unit.title} - Discussion Forum\n\n`;
+          masterNotesContent += `## 💬 Discussion Forum\n\n`;
           unit.discussions.forEach(d => {
             md += `## ${d.title}\n\n`;
+            masterNotesContent += `### ${d.title}\n\n`;
             if (d.url) {
               md += `*Brightspace Link: [Open Discussion Thread ↗](${d.url})*\n\n`;
             }
             if (d.contentHtml) {
-              md += `${this.htmlToMarkdown(this.cleanContentHtml(d.contentHtml, d.title))}\n\n`;
+              const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(d.contentHtml, d.title));
+              md += `${bodyMd}\n\n`;
+              masterNotesContent += `${bodyMd}\n\n`;
             }
             md += `---\n\n`;
           });
@@ -376,13 +511,17 @@ const MarkdownBuilder = {
         // 4. Assignments -> 04_Assignments.md
         if (unit.assignments && unit.assignments.length > 0) {
           let md = `# ${unit.title} - Assignment Activities\n\n`;
+          masterNotesContent += `## 📝 Assignment Activities\n\n`;
           unit.assignments.forEach(a => {
             md += `## ${a.title}\n\n`;
+            masterNotesContent += `### ${a.title}\n\n`;
             if (a.url) {
               md += `*Brightspace Link: [Open Assignment Submission ↗](${a.url})*\n\n`;
             }
             if (a.contentHtml) {
-              md += `${this.htmlToMarkdown(this.cleanContentHtml(a.contentHtml, a.title))}\n\n`;
+              const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(a.contentHtml, a.title));
+              md += `${bodyMd}\n\n`;
+              masterNotesContent += `${bodyMd}\n\n`;
             }
             md += `---\n\n`;
           });
@@ -404,15 +543,21 @@ const MarkdownBuilder = {
         // 5. Knowledge Checks -> 05_Knowledge_Checks.md
         if (knowledgeChecks.length > 0) {
           let md = `# ${unit.title} - Knowledge Checks\n\n`;
+          masterNotesContent += `## 💡 Knowledge Checks\n\n`;
           knowledgeChecks.forEach(q => {
             md += `## ${q.title}\n\n`;
+            masterNotesContent += `### ${q.title}\n\n`;
             if (q.url) {
               md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
             }
             if (q.contentHtml) {
-              md += `${this.htmlToMarkdown(this.cleanContentHtml(q.contentHtml, q.title))}\n\n`;
+              const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(q.contentHtml, q.title));
+              md += `${bodyMd}\n\n`;
+              masterNotesContent += `${bodyMd}\n\n`;
             } else {
-              md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
+              const notice = `> 💡 **Quiz Ready on Brightspace:** Take your first attempt online on Brightspace, then re-export this course to download full questions, answers, and explanations for offline exam prep!\n\n`;
+              md += notice;
+              masterNotesContent += notice;
             }
             md += `---\n\n`;
           });
@@ -422,15 +567,21 @@ const MarkdownBuilder = {
         // 6. Self-Quizzes -> 06_Self_Quizzes.md
         if (selfQuizzes.length > 0) {
           let md = `# ${unit.title} - Self-Quizzes\n\n`;
+          masterNotesContent += `## ❓ Self-Quizzes\n\n`;
           selfQuizzes.forEach(q => {
             md += `## ${q.title}\n\n`;
+            masterNotesContent += `### ${q.title}\n\n`;
             if (q.url) {
               md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
             }
             if (q.contentHtml) {
-              md += `${this.htmlToMarkdown(this.cleanContentHtml(q.contentHtml, q.title))}\n\n`;
+              const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(q.contentHtml, q.title));
+              md += `${bodyMd}\n\n`;
+              masterNotesContent += `${bodyMd}\n\n`;
             } else {
-              md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
+              const notice = `> 💡 **Quiz Ready on Brightspace:** Take your first attempt online on Brightspace, then re-export this course to download full questions, answers, and explanations for offline exam prep!\n\n`;
+              md += notice;
+              masterNotesContent += notice;
             }
             md += `---\n\n`;
           });
@@ -440,15 +591,21 @@ const MarkdownBuilder = {
         // 7. Assessments -> 07_Assessments.md
         if (assessmentQuizzes.length > 0) {
           let md = `# ${unit.title} - Assessments\n\n`;
+          masterNotesContent += `## 📊 Assessments\n\n`;
           assessmentQuizzes.forEach(q => {
             md += `## ${q.title}\n\n`;
+            masterNotesContent += `### ${q.title}\n\n`;
             if (q.url) {
               md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
             }
             if (q.contentHtml) {
-              md += `${this.htmlToMarkdown(this.cleanContentHtml(q.contentHtml, q.title))}\n\n`;
+              const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(q.contentHtml, q.title));
+              md += `${bodyMd}\n\n`;
+              masterNotesContent += `${bodyMd}\n\n`;
             } else {
-              md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
+              const notice = `> 💡 **Quiz Ready on Brightspace:** Take your first attempt online on Brightspace, then re-export this course to download full questions, answers, and explanations for offline exam prep!\n\n`;
+              md += notice;
+              masterNotesContent += notice;
             }
             md += `---\n\n`;
           });
@@ -459,19 +616,38 @@ const MarkdownBuilder = {
       // 8. Conclusion -> 08_Conclusion.md (Included in both)
       if (conclusionTopics.length > 0) {
         let md = `# ${unit.title} - Conclusion\n\n`;
+        masterNotesContent += `## 🏁 Conclusion\n\n`;
         conclusionTopics.forEach(c => {
-          md += `## ${c.title}\n\n`;
+          if (!this.isDuplicateTitle(unit.title + ' Conclusion', c.title) && conclusionTopics.length > 1) {
+            md += `## ${c.title}\n\n`;
+            masterNotesContent += `### ${c.title}\n\n`;
+          }
           if (c.url) {
             md += `*Brightspace Link: [Open Live Topic ↗](${c.url})*\n\n`;
           }
           if (c.contentHtml) {
-            md += `${this.htmlToMarkdown(this.cleanContentHtml(c.contentHtml, c.title))}\n\n`;
+            const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(c.contentHtml, c.title));
+            md += `${bodyMd}\n\n`;
+            masterNotesContent += `${bodyMd}\n\n`;
           }
           md += `---\n\n`;
         });
         addFile(folderName, '08_Conclusion.md', md);
       }
+
+      masterNotesContent += `\n---\n\n`;
     });
+
+    // Master Course Reading Matrix in README
+    if (readingMatrix.length > 0) {
+      readmeContent += `\n## 📚 Master Course Reading Matrix\n\n`;
+      readmeContent += `| Unit | Assigned Resource / Textbook | Link |\n`;
+      readmeContent += `| :--- | :--- | :--- |\n`;
+      readingMatrix.forEach((rm) => {
+        readmeContent += `| ${rm.unit} | ${rm.title} | [Open Link ↗](${rm.url}) |\n`;
+      });
+      readmeContent += `\n`;
+    }
 
     readmeContent += `\n---\n\n`;
     readmeContent += `### 💡 Support & Community Feedback\n\n`;
@@ -482,7 +658,12 @@ const MarkdownBuilder = {
 
     files.push({
       name: 'README.md',
-      content: readmeContent
+      content: this.cleanMarkdown(readmeContent)
+    });
+
+    files.push({
+      name: 'Master_Course_Complete.md',
+      content: this.cleanMarkdown(masterNotesContent)
     });
 
     return files;
