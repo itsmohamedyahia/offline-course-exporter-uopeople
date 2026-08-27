@@ -5,11 +5,73 @@
 const MarkdownBuilder = {
   sanitizeFolderName(name) {
     if (!name) return 'Unit';
+    // Normalize unicode whitespace (non-breaking spaces, em-space, etc.) to standard space
+    let clean = name.replace(/[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, ' ');
     // Replace characters not allowed in file/folder names on Windows/Mac/Linux
-    let clean = name.replace(/[\\/:*?"<>|]/g, '_').trim();
-    // Collapse multiple underscores
-    clean = clean.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+    clean = clean.replace(/[\\/:*?"<>|]/g, '_').trim();
+    // Collapse multiple underscores and spaces
+    clean = clean.replace(/_+/g, '_').replace(/\s+/g, ' ').replace(/^_+|_+$/g, '');
     return clean || 'Unit';
+  },
+
+  cleanContentHtml(html, title = '') {
+    if (!html) return '';
+    let clean = html;
+
+    // 1. Remove duplicate logo footers, copyright footers, and decorative page breaks
+    clean = clean.replace(/<footer[^>]* class="mceNonEditable"[^>]*>[\s\S]*?<\/footer>/gi, '');
+    clean = clean.replace(/<p>\s*<img[^>]*(LogoMinimal_Purple|logo_shield|PageBreak_icon)[^>]*>\s*<\/p>/gi, '');
+    clean = clean.replace(/<img[^>]*(LogoMinimal_Purple|logo_shield|PageBreak_icon)[^>]*>/gi, '');
+
+    // 2. Remove duplicate hero headers and banners
+    clean = clean.replace(/<div[^>]*class="[^"]*courseware-headers-[^"]*"[^>]*>[\s\S]*?<\/div>\s*<\/div>/gi, '');
+    
+    // Remove duplicate title headers if they match the topic title
+    if (title) {
+      const escapedTitle = title.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const hRegex = new RegExp('<(h1|h2|h3|h4|h5|h6)[^>]*>\\s*(?:<span[^>]*>\\s*)*' + escapedTitle + '\\s*(?:<\\/span>\\s*)*<\\/\\1>', 'i');
+      clean = clean.replace(hRegex, '');
+    }
+
+    // 3. Remove LockDown Browser scaffolding & forms (keep inside content)
+    clean = clean.replace(/<iframe id="LockDownBrowserLaunchFrame"[\s\S]*?<\/iframe>/gi, '');
+    clean = clean.replace(/<input[^>]*type="hidden"[^>]*>/gi, '');
+    clean = clean.replace(/<button[^>]*id="z_a"[^>]*>[\s\S]*?<\/button>/gi, '');
+    clean = clean.replace(/<d2l-floating-buttons[\s\S]*?<\/d2l-floating-buttons>/gi, '');
+    clean = clean.replace(/<form[^>]*id="d2l_form"[^>]*>/gi, '');
+    clean = clean.replace(/<\/form>/gi, '');
+    
+    // 4. Strip inline font-sizes style="font-size: ..."
+    clean = clean.replace(/style="[^"]*font-size:\s*[^";]+;?[^"]*"/gi, (match) => {
+      let style = match.replace(/font-size:\s*[^";]+;?/gi, '');
+      if (style === 'style=""') return '';
+      return style;
+    });
+
+    // Clean up empty paragraphs/spans left over
+    clean = clean.replace(/<p>\s*<\/p>/gi, '');
+    clean = clean.replace(/<span[^>]*>\s*<\/span>/gi, '');
+
+    return clean;
+  },
+
+  cleanUnitDescription(htmlStr, title = '') {
+    if (!htmlStr) return '';
+    let clean = htmlStr;
+    clean = clean.replace(/<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>/gi, (match) => {
+      const headerText = match.replace(/<[^>]+>/g, '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cleanTitle = (title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (headerText === cleanTitle || (cleanTitle && headerText.includes(cleanTitle)) || (headerText && cleanTitle.includes(headerText))) {
+        return '';
+      }
+      return match;
+    });
+    clean = clean.replace(/<hr\s*\/?>/gi, '');
+    clean = clean.replace(/<(p|div|span)[^>]*>\s*<\/\1>/gi, '');
+    clean = clean.trim();
+    const textContent = clean.replace(/<[^>]+>/g, '').trim();
+    if (!textContent) return '';
+    return clean;
   },
 
   htmlToMarkdown(htmlStr) {
@@ -215,8 +277,9 @@ const MarkdownBuilder = {
     readmeContent += `## Course Structure\n\n`;
 
     units.forEach((unit, unitIdx) => {
-      const folderName = `${String(unitIdx + 1).padStart(2, '0')}_${this.sanitizeFolderName(unit.title)}`;
-      readmeContent += `- [${unit.title}](./${encodeURIComponent(folderName)})\n`;
+      const cleanTitle = (unit.title || '').replace(/[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, ' ').trim();
+      const folderName = `${String(unitIdx + 1).padStart(2, '0')}_${this.sanitizeFolderName(cleanTitle)}`;
+      readmeContent += `- [${cleanTitle}](./${encodeURIComponent(folderName)}/01_Overview.md)\n`;
 
       // Collect IDs of topics assigned to specialized sections to prevent duplicates in Overview
       const categorizedIds = new Set();
@@ -234,15 +297,16 @@ const MarkdownBuilder = {
 
       // 1. Overview -> 01_Overview.md
       let overviewMd = `# ${unit.title} - Overview\n\n`;
-      if (unit.description) {
-        overviewMd += `${this.htmlToMarkdown(unit.description)}\n\n`;
+      const cleanDesc = this.cleanUnitDescription(unit.description, unit.title);
+      if (cleanDesc) {
+        overviewMd += `${this.htmlToMarkdown(cleanDesc)}\n\n`;
       }
       const generalTopics = (unit.topics || []).filter(t => !categorizedIds.has(t.id));
       if (generalTopics.length > 0) {
         generalTopics.forEach(t => {
           overviewMd += `## ${t.title}\n\n`;
           if (t.contentHtml) {
-            overviewMd += `${this.htmlToMarkdown(t.contentHtml)}\n\n`;
+            overviewMd += `${this.htmlToMarkdown(this.cleanContentHtml(t.contentHtml, t.title))}\n\n`;
           }
           if (t.url) {
             overviewMd += `*Brightspace Link: [Open Topic ↗](${t.url})*\n\n`;
@@ -265,7 +329,7 @@ const MarkdownBuilder = {
             md += `*Brightspace Link: [Open Reading Topic ↗](${r.url})*\n\n`;
           }
           if (r.contentHtml) {
-            md += `${this.htmlToMarkdown(r.contentHtml)}\n\n`;
+            md += `${this.htmlToMarkdown(this.cleanContentHtml(r.contentHtml, r.title))}\n\n`;
           }
           md += `---\n\n`;
         });
@@ -302,7 +366,7 @@ const MarkdownBuilder = {
               md += `*Brightspace Link: [Open Discussion Thread ↗](${d.url})*\n\n`;
             }
             if (d.contentHtml) {
-              md += `${this.htmlToMarkdown(d.contentHtml)}\n\n`;
+              md += `${this.htmlToMarkdown(this.cleanContentHtml(d.contentHtml, d.title))}\n\n`;
             }
             md += `---\n\n`;
           });
@@ -318,7 +382,7 @@ const MarkdownBuilder = {
               md += `*Brightspace Link: [Open Assignment Submission ↗](${a.url})*\n\n`;
             }
             if (a.contentHtml) {
-              md += `${this.htmlToMarkdown(a.contentHtml)}\n\n`;
+              md += `${this.htmlToMarkdown(this.cleanContentHtml(a.contentHtml, a.title))}\n\n`;
             }
             md += `---\n\n`;
           });
@@ -346,7 +410,7 @@ const MarkdownBuilder = {
               md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
             }
             if (q.contentHtml) {
-              md += `${this.htmlToMarkdown(q.contentHtml)}\n\n`;
+              md += `${this.htmlToMarkdown(this.cleanContentHtml(q.contentHtml, q.title))}\n\n`;
             } else {
               md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
             }
@@ -364,7 +428,7 @@ const MarkdownBuilder = {
               md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
             }
             if (q.contentHtml) {
-              md += `${this.htmlToMarkdown(q.contentHtml)}\n\n`;
+              md += `${this.htmlToMarkdown(this.cleanContentHtml(q.contentHtml, q.title))}\n\n`;
             } else {
               md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
             }
@@ -382,7 +446,7 @@ const MarkdownBuilder = {
               md += `*Brightspace Link: [Open Quiz ↗](${q.url})*\n\n`;
             }
             if (q.contentHtml) {
-              md += `${this.htmlToMarkdown(q.contentHtml)}\n\n`;
+              md += `${this.htmlToMarkdown(this.cleanContentHtml(q.contentHtml, q.title))}\n\n`;
             } else {
               md += `*No attempt history found. Take this quiz in Brightspace, then export again to download questions and answers.*\n\n`;
             }
@@ -401,7 +465,7 @@ const MarkdownBuilder = {
             md += `*Brightspace Link: [Open Live Topic ↗](${c.url})*\n\n`;
           }
           if (c.contentHtml) {
-            md += `${this.htmlToMarkdown(c.contentHtml)}\n\n`;
+            md += `${this.htmlToMarkdown(this.cleanContentHtml(c.contentHtml, c.title))}\n\n`;
           }
           md += `---\n\n`;
         });

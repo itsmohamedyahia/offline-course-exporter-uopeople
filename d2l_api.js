@@ -102,8 +102,8 @@ const D2LApi = {
       const doc = parser.parseFromString(htmlStr, 'text/html');
       let changed = false;
       doc.querySelectorAll('img').forEach(img => {
-        const src = img.getAttribute('src') || '';
-        if (src.toLowerCase().includes('logo_shield.png')) {
+        const src = (img.getAttribute('src') || '').toLowerCase();
+        if (src.includes('logo_shield') || src.includes('logominimal') || src.includes('pagebreak_icon')) {
           img.remove();
           changed = true;
         }
@@ -111,7 +111,7 @@ const D2LApi = {
       return changed ? doc.body.innerHTML : htmlStr;
     } catch (e) {
       console.warn('Failed to clean HTML via DOMParser:', e);
-      return htmlStr.replace(/<img[^>]*logo_shield[^>]*>/gi, '');
+      return htmlStr.replace(/<img[^>]*(logo_shield|logominimal|pagebreak_icon)[^>]*>/gi, '');
     }
   },
 
@@ -877,7 +877,11 @@ const D2LApi = {
         const src = img.getAttribute('src');
         if (src) {
           const absUrl = this.toAbsoluteUrl(src, baseUrl);
-          if (src.toLowerCase().includes('logo_shield.png') || absUrl.toLowerCase().includes('logo_shield.png')) {
+          const lowerSrc = src.toLowerCase();
+          const lowerAbs = absUrl.toLowerCase();
+          if (lowerSrc.includes('logo_shield') || lowerAbs.includes('logo_shield') ||
+              lowerSrc.includes('logominimal') || lowerAbs.includes('logominimal') ||
+              lowerSrc.includes('pagebreak_icon') || lowerAbs.includes('pagebreak_icon')) {
             img.remove();
           } else if (!src.startsWith('http') && !src.startsWith('data:')) {
             img.setAttribute('src', absUrl);
@@ -921,7 +925,7 @@ const D2LApi = {
     };
 
     const processModule = (module, isParentCourseIntro = false) => {
-      const title = module.Title || '';
+      let title = (module.Title || '').replace(/[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, ' ').trim();
       const lowerTitle = title.toLowerCase();
       if (lowerTitle.includes('unit 9') || lowerTitle.includes('learning journal')) {
         return null;

@@ -23,10 +23,10 @@ const HTMLBuilder = {
       if (!html) return '';
       let clean = html;
 
-      // 1. Remove duplicate logo footers and copyright footers
+      // 1. Remove duplicate logo footers, copyright footers, and decorative page breaks
       clean = clean.replace(/<footer[^>]* class="mceNonEditable"[^>]*>[\\s\\S]*?<\\/footer>/gi, '');
-      clean = clean.replace(/<p>\\s*<img[^>]*LogoMinimal_Purple\\.png[^>]*>\\s*<\\/p>/gi, '');
-      clean = clean.replace(/<img[^>]*LogoMinimal_Purple\\.png[^>]*>/gi, '');
+      clean = clean.replace(/<p>\\s*<img[^>]*(LogoMinimal_Purple|logo_shield|PageBreak_icon)[^>]*>\\s*<\\/p>/gi, '');
+      clean = clean.replace(/<img[^>]*(LogoMinimal_Purple|logo_shield|PageBreak_icon)[^>]*>/gi, '');
 
       // 2. Remove duplicate hero headers and banners
       clean = clean.replace(/<div[^>]*class="[^"]*courseware-headers-[^"]*"[^>]*>[\\s\\S]*?<\\/div>\\s*<\\/div>/gi, '');
@@ -34,7 +34,7 @@ const HTMLBuilder = {
       // Remove duplicate title headers if they match the topic title
       if (title) {
         const escapedTitle = title.replace(/[-\\/\\\\^$*+?.()|[\\\]{}]/g, '\\\\$&');
-        const hRegex = new RegExp('<(h1|h2|h3)[^>]*>\\\\s*(?:<span[^>]*>\\\\s*)*' + escapedTitle + '\\\\s*(?:<\\\\/span>\\\\s*)*<\\\\/\\\\1>', 'i');
+        const hRegex = new RegExp('<(h1|h2|h3|h4|h5|h6)[^>]*>\\\\s*(?:<span[^>]*>\\\\s*)*' + escapedTitle + '\\\\s*(?:<\\\\/span>\\\\s*)*<\\\\/\\\\1>', 'i');
         clean = clean.replace(hRegex, '');
       }
 
@@ -56,6 +56,32 @@ const HTMLBuilder = {
       // Clean up empty paragraphs/spans left over
       clean = clean.replace(/<p>\\s*<\\/p>/gi, '');
       clean = clean.replace(/<span[^>]*>\\s*<\\/span>/gi, '');
+
+      return clean;
+    }
+
+    function cleanUnitDescription(html, title = '') {
+      if (!html) return '';
+      let clean = html;
+
+      // Remove duplicate title headers if they match or start with the title (case-insensitive)
+      clean = clean.replace(/<h[1-6][^>]*>[\\s\\S]*?<\\/h[1-6]>/gi, (match) => {
+        const headerText = match.replace(/<[^>]+>/g, '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanTitle = (title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (headerText === cleanTitle || (cleanTitle && headerText.includes(cleanTitle)) || (headerText && cleanTitle.includes(headerText))) {
+          return '';
+        }
+        return match;
+      });
+
+      // Remove standalone <hr>, empty tags, and extra breaks
+      clean = clean.replace(/<hr\\s*\\/?>/gi, '');
+      clean = clean.replace(/<(p|div|span)[^>]*>\\s*<\\/\\1>/gi, '');
+      clean = clean.trim();
+
+      // Check if remaining text has any real content
+      const textContent = clean.replace(/<[^>]+>/g, '').trim();
+      if (!textContent) return '';
 
       return clean;
     }
@@ -1188,44 +1214,50 @@ const HTMLBuilder = {
         const itemWrapper = document.createElement('div');
         itemWrapper.className = 'unit-nav-wrapper';
 
+        const { sections } = getUnitSections(unit);
+        const hasSections = sections.length > 0;
+
         const item = document.createElement('div');
         item.className = 'unit-nav-item' + (isCurrentActive ? ' active' : '');
         item.innerHTML = \`
           <span>\${escapeHtml(unit.title)}</span>
+          \${hasSections ? '<span class="unit-chevron" style="font-size: 10px; opacity: 0.6; transition: transform 0.2s ease; transform: ' + (isCurrentActive ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>' : ''}
         \`;
         item.onclick = () => {
-          activeUnitIndex = units.indexOf(unit);
+          const unitIdx = units.indexOf(unit);
+          if (activeUnitIndex === unitIdx) {
+            activeUnitIndex = -1;
+          } else {
+            activeUnitIndex = unitIdx;
+          }
           renderNav(filteredUnits);
           renderMain();
         };
         itemWrapper.appendChild(item);
 
-        if (isCurrentActive) {
-          const { sections } = getUnitSections(unit);
-          if (sections.length > 0) {
-            const subnav = document.createElement('div');
-            subnav.className = 'unit-subnav-list';
-            sections.forEach((sec) => {
-              const subItem = document.createElement('button');
-              subItem.type = 'button';
-              subItem.className = 'unit-subnav-item';
-              subItem.dataset.secId = sec.id;
-              subItem.innerHTML = \`
-                <span style="display: inline-flex; align-items: center; gap: 6px;">
-                  <span class="subnav-dot"></span>
-                  <span>\${escapeHtml(sec.label)}</span>
-                </span>
-                \${sec.count ? \`<span style="font-size: 10.5px; opacity: 0.7;">(\${sec.count})</span>\` : ''}
-              \`;
-              subItem.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                scrollToSection(sec.id);
-              };
-              subnav.appendChild(subItem);
-            });
-            itemWrapper.appendChild(subnav);
-          }
+        if (isCurrentActive && hasSections) {
+          const subnav = document.createElement('div');
+          subnav.className = 'unit-subnav-list';
+          sections.forEach((sec) => {
+            const subItem = document.createElement('button');
+            subItem.type = 'button';
+            subItem.className = 'unit-subnav-item';
+            subItem.dataset.secId = sec.id;
+            subItem.innerHTML = \`
+              <span style="display: inline-flex; align-items: center; gap: 6px;">
+                <span class="subnav-dot"></span>
+                <span>\${escapeHtml(sec.label)}</span>
+              </span>
+              \${sec.count ? '<span style="font-size: 10.5px; opacity: 0.7;">(' + sec.count + ')</span>' : ''}
+            \`;
+            subItem.onclick = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              scrollToSection(sec.id);
+            };
+            subnav.appendChild(subItem);
+          });
+          itemWrapper.appendChild(subnav);
         }
 
         navContainer.appendChild(itemWrapper);
@@ -1322,16 +1354,23 @@ const HTMLBuilder = {
       const main = document.getElementById('main-content');
       const unit = units[activeUnitIndex];
       if (!unit) {
-        main.innerHTML = '<h2>No unit selected</h2>';
+        main.innerHTML = \`
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 50vh; text-align: center; color: var(--text-muted); gap: 14px; padding: 40px 20px;">
+            <div style="font-size: 42px; opacity: 0.8;">📖</div>
+            <h2 style="font-size: 20px; font-weight: 600; color: var(--text-main); margin: 0;">No Unit Selected</h2>
+            <p style="font-size: 13.5px; max-width: 420px; margin: 0; line-height: 1.5;">Click any unit in the sidebar to expand its contents, readings, and study materials.</p>
+          </div>
+        \`;
         return;
       }
 
       const { sections, generalTopics, conclusionTopics } = getUnitSections(unit);
+      const cleanDesc = cleanUnitDescription(unit.description, unit.title);
 
       let html = \`
         <header class="unit-header" id="sec-header">
           <h1>\${escapeHtml(unit.title)}</h1>
-          \${unit.description ? \`<div class="unit-description">\${unit.description}</div>\` : ''}
+          \${cleanDesc ? \`<div class="unit-description">\${cleanDesc}</div>\` : ''}
         </header>
       \`;
 
