@@ -117,3 +117,29 @@ This document records the historical challenges, edge cases, root cause analyses
 * **Root Cause:** Negative margins and parent container `overflow: hidden` collided on subpixel font scaling.
 * **Solution:**
   - Created a dedicated `.peer-safe-banner` CSS class with explicit padding and border-box sizing in `html_builder.js`.
+
+---
+
+### 13. ⚡ Client-Side Scoping of `escapeHtml` & Sidebar Event Bubbling
+* **Symptoms:** Exported `index.html` showed an empty sidebar unit list and blank main content area on load (`ReferenceError: escapeHtml is not defined`). Checkboxes in sidebar failed to toggle completion.
+* **Root Cause:**
+  - `escapeHtml` was escaped inside the generated client script (`\${escapeHtml(...)}`) but was not defined in client-side script scope, aborting `renderNav()` on `DOMContentLoaded`.
+  - Checkbox clicks bubbled up to parent unit row click handlers rather than toggling completion status.
+* **Solution:**
+  - Added `escapeHtml(str)` definition directly inside the embedded client-side script block in `html_builder.js`.
+  - Added dedicated `stopPropagation` click and keyboard handlers to `.unit-nav-checkbox`.
+  - Added `expandedUnits` Set to support toggling and collapsing unit sub-item hierarchies independently.
+
+---
+
+### 14. 📊 Assignment & Discussion Grading Rubrics Extraction & Student Permission Handling
+* **Symptoms:** Exported assignment activities and discussions lacked grading evaluation rubrics, showing only text prompts even when Brightspace assignments referenced "the rubric below".
+* **Root Cause:**
+  - `d2l_api.js` previously only inspected `matchedDropbox.Evaluation.RubricIds`. In modern Brightspace Valence LE APIs, rubrics are attached inside `Assessment.Rubrics` (`RubricId`), `RubricIds`, or `Rubrics`.
+  - The Valence collection endpoint `/d2l/api/le/1.30/{orgUnitId}/rubrics/` often returns `403 Forbidden` for student role accounts because students lack course-level "Manage Rubrics" instructor permissions.
+  - In some Valence rubric models, `Levels` are defined inside individual `CriteriaGroup.Levels` rather than at the root `rubric.Levels`.
+* **Solution:**
+  - Implemented `D2LApi.extractRubricIds()` inspecting `Assessment.Rubrics`, `Evaluation.RubricIds`, `Rubrics`, and `RubricId`.
+  - Added activity-specific query fallback `/d2l/api/le/{version}/{orgUnitId}/rubrics?objectType=Dropbox&objectId={folderId}` and student LMS view scraping `/d2l/lms/rubrics/rubric_view.d2l?ou={orgUnitId}&rubricId={rubricId}`.
+  - Updated `buildRubricHtml()` to support Analytic and Holistic rubrics, fallback to `group.Levels`, render responsive matrix tables with criteria weights, and convert cleanly into GitHub-Flavored Markdown tables.
+

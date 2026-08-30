@@ -62,10 +62,15 @@ flowchart TD
 - **Valence REST Endpoints Queried:**
   - **Course Information:** `/d2l/api/lp/1.30/courses/{orgUnitId}` (Retrieves course name and catalog code).
   - **Table of Contents (TOC):** `/d2l/api/le/{version}/{orgUnitId}/content/toc` (Iterates versions `1.54`, `1.43`, `1.30`, `1.0`).
-- **DOM Fallback & Quiz Scrapers:**
+  - **Assignments (Dropboxes):** `/d2l/api/le/{version}/{orgUnitId}/dropbox/folders/` (Extracts prompts and attached `Assessment.Rubrics`).
+  - **Discussions:** `/d2l/api/le/{version}/{orgUnitId}/discussions/forums/` and `.../topics/`.
+  - **Grading Rubrics:** `/d2l/api/le/{version}/{orgUnitId}/rubrics/`, `.../rubrics/{rubricId}`, and `.../rubrics?objectType=Dropbox&objectId={dbId}`.
+- **DOM Fallback & Quiz / Rubric Scrapers:**
   - **Quiz List Discovery:** `/d2l/lms/quizzes/user/quizzes_list.d2l?ou={orgUnitId}` (Scrapes quiz IDs and names).
   - **Quiz Attempt Feedback:** `/d2l/lms/quizzes/user/quiz_submissions_attempt.d2l?isprv=0&qi={quizId}&ai={attemptId}&ou={orgUnitId}` (Extracts completed questions, answer options, selected answers, correctness indicators, and instructor feedback).
+  - **Student LMS Rubric Scraper:** `/d2l/lms/rubrics/rubric_view.d2l?ou={orgUnitId}&rubricId={rubricId}` or `/d2l/lms/dropbox/user/view_rubric.d2l?ou={orgUnitId}&db={dbId}` (Extracts rubric matrices when Valence REST API returns 403 Forbidden for student roles).
 - **Sanitization & Transformation Engine:**
+  - `buildRubricHtml()`: Generates responsive evaluation matrices for Analytic and Holistic rubrics with criteria weights, point ceilings, and level performance descriptors.
   - `cleanContentHtml()`: Strips LockDown browser scaffolding, tracking pixels, empty hidden forms, D2L courseware hero banners (`courseware-headers-*`), and redundant logo footers (`LogoMinimal_Purple.png`).
   - `cleanUnitDescription()`: Strips duplicate internal `<h2>` titles, `<hr>` dividers, and stray `&nbsp;` / comment delimiters.
   - `shouldKeepAttachment()`: Filters out duplicate syllabus and course overview PDFs from subsequent weekly unit folders.
@@ -75,15 +80,15 @@ flowchart TD
 ### 4. `html_builder.js`
 - **Role:** Builds a standalone, interactive, single-page offline web application (`index.html`).
 - **Interactive UI & Ergonomics:**
-  - **Collapsible Unit Navigation:** Clicking an active unit collapses/contracts its section list. Empty states gracefully prompt section selection.
+  - **Collapsible Unit Navigation:** Interactive sidebar with expandable/collapsible unit sub-item hierarchies, chevron controls, and graceful empty state handling.
   - **Sticky Section Index Bar:** Sticky top navigation pills with auto-scrollspy tracking as the user scrolls.
-  - **Full-Text Live Search Engine:** Client-side search indexing unit titles, topics, and question banks.
+  - **Full-Text Live Search Engine:** Client-side search indexing unit titles, topics, and question banks (`Ctrl+K` or `/`).
+  - **Interactive Assignment Grading Rubrics:** Embedded responsive evaluation matrices with dark/light themes, criteria points, weights, and level descriptions with horizontal scroll protection.
   - **100% Offline KaTeX Math:** Automatically parses and renders `$...$` and `$$...$$` math notation without network calls.
   - **Prism.js Syntax Highlighting:** Monospace styling, syntax highlighting, and 1-click **📋 Copy Code** buttons.
   - **Interactive Collapsible Quizzes:** Expandable question accordions with dynamic show/hide toggle badges.
   - **Document Preview Modal:** In-portal modal viewer allowing students to inspect PDF and HTML readings directly inside the offline app.
-  - **Study Progress Persistence:** Checkboxes for unit completion with persistent tracking in `localStorage`.
-  - **Reading Time Estimator:** Real-time word-count-based reading duration calculated per unit (~200 wpm).
+  - **Study Progress Persistence:** Interactive completion checkboxes in the sidebar and header with persistent tracking in `localStorage` and real-time progress bar.
   - **APA Citation Copier:** Instant 1-click copy of formal APA 7th edition course citations.
   - **Linear Flow Navigation Cards:** Bottom Previous / Next unit transition cards.
   - **Keyboard Shortcuts:**
@@ -91,13 +96,15 @@ flowchart TD
     | :---: | :--- |
     | `[` | Navigate to Previous Unit |
     | `]` | Navigate to Next Unit |
-    | `/` | Focus Live Search Bar |
+    | `/` or `Ctrl+K` | Focus Live Search Bar |
     | `f` | Toggle Focus / Zen Mode (Collapses Sidebar) |
     | `t` | Toggle Dark / Light Theme |
+    | `+` / `-` / `0` | Rescale Font Size (80% - 130%) |
     | `?` | Show Keyboard Shortcuts Modal |
 
 ### 5. `markdown_builder.js`
 - **Role:** Generates an organized hierarchy of GitHub-Flavored Markdown files and subdirectories.
+  - **Grading Rubrics in Markdown:** Converts rubric matrices into clean GitHub-Flavored Markdown tables within `04_Assignments.md` and `Master_Course_Complete.md`.
 - **Output Hierarchy:**
   ```text
   ├── README.md                          # Course overview, syllabus, master reading matrix

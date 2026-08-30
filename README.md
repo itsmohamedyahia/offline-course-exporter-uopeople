@@ -22,15 +22,30 @@ A modern Manifest V3 browser extension designed for University of the People stu
 
 ## ✨ Key Features
 
-- 📌 **Universal Course Detection**: Automatically detects course OrgUnit IDs and course titles from **any** Brightspace page (e.g. course homepage, syllabus, or specific lesson/unit URLs).
+- 📌 **Universal Course Detection**: Automatically detects course OrgUnit IDs and clean course titles from **any** Brightspace page (course homepage, syllabus, or specific unit URLs).
 - 🛡️ **Flexible Export Scopes**:
   - 🔒 **Full Course Archive (Personal)**: Complete archive including syllabus, readings, discussions, assignments, and practice quizzes.
   - 👥 **Shareable Study Guide (Peer-Safe)**: Curated syllabus, unit learning goals, and reading lists only. Excludes graded evaluation prompts and quizzes for safe peer sharing.
 - 📦 **Dual Output Formats**:
-  1. **Interactive HTML Website**: Single-page interactive web application with instant search, dark/light mode toggle, `@media print` PDF support, and collapsible quiz browsers.
-  2. **Markdown Folders Export**: Modular unit folders (`01_Overview.md`, `02_Readings.md`, etc.) formatted for Obsidian, Logseq, Notion, or local note systems.
-- 📁 **Attachment Offloading**: Downloads PDFs, textbooks, syllabus documents, and supplementary files directly into a dedicated `assets/` directory and re-links them locally.
-- 🔒 **Privacy-First Architecture**: Runs 100% locally in your browser using active session cookies. Zero telemetry, zero external servers, and zero data tracking.
+  1. **Interactive Single-Page Offline Website (`index.html` + `assets/`)**:
+     - 🌓 **Dark & Light Themes**: Modern dark-slate titanium and clean light mode with persistent toggle.
+     - 🔍 **Live Full-Text Search Modal**: Instant client-side modal search (`Ctrl+K` or `/`) indexing all units, topics, and quiz questions.
+     - 📐 **100% Offline KaTeX Math**: Parses and renders LaTeX formulas (`$...$`, `$$...$$`) completely offline with zero CDN dependencies.
+     - 💻 **Prism Syntax Highlighting**: Clean monospace syntax formatting with 1-click **📋 Copy Code** button (Python, Java, C++, SQL, Bash, JS).
+     - 🗂️ **Interactive Collapsible Sidebar Navigation**: Expand and collapse unit sub-items (readings, discussions, assignments, quizzes, attachments) with interactive chevron controls.
+     - 📌 **Sticky Section Navigation Bar**: Sticky pill-bar with smooth scroll-spy tracking as you scroll through unit sections.
+     - ✅ **Interactive Study Progress Tracker**: Interactive checkboxes directly in the sidebar and unit headers, with real-time percentage progress bar and persistent `localStorage` saving.
+     - 📊 **Interactive Assignment Grading Rubrics**: Full evaluation rubric matrices embedded under assignments and discussions, showing criteria weights, points, and score level descriptions in responsive tables.
+     - ❓ **Collapsible Quiz Accordions**: Clean question & answer accordions with attempt review, correctness badges, and instructor explanations.
+     - 📄 **Interactive Document Preview Modal**: Inspect offline PDFs and HTML reading documents directly in an embedded in-app modal.
+     - 📋 **1-Click APA Citation Copier**: One-click copy of formal APA 7th edition course citations for academic referencing.
+     - 🔗 **Deep Section Linking**: 1-click **🔗 Copy Link** on any topic or section with glowing focus animations.
+     - 🔤 **Dynamic Font Rescaling**: Instant font scaling (`A-` / `A+`, 80% to 130%) with persistent memory.
+     - 🧘 **Focus / Zen Mode**: Collapse the sidebar with one click or press `F` for distraction-free studying.
+     - ⌨️ **Comprehensive Keyboard Shortcuts**: `[` / `]` (prev/next unit), `/` or `Ctrl+K` (search), `F` (focus mode), `T` (theme toggle), `+` / `-` / `0` (font scale), `?` (shortcuts help).
+  2. **Modular Markdown Archive**: Unit folders (`01_Overview.md`, `02_Readings.md`, `04_Assignments.md` with GFM rubric tables, etc.) formatted for Obsidian, Logseq, Notion, with a unified **Master Course Companion** (`Master_Course_Complete.md`) and cross-unit **Master Reading Matrix** (`README.md`).
+- 📁 **Attachment Offloading & Copyright Protection**: Downloads PDFs and textbooks into `assets/` and re-links them locally, or cleanly falls back to online Brightspace reference links when attachment downloads are toggled off.
+- 🔒 **Privacy-First Architecture**: Runs 100% locally in your browser sandbox using active session cookies. Zero telemetry, zero external servers, and zero data tracking.
 
 ---
 

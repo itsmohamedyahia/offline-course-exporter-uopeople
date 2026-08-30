@@ -245,8 +245,24 @@ const MarkdownBuilder = {
           }
           return videoMd;
         }
+        if (node.classList.contains('rubric-badge')) {
+          const badgeText = childrenMarkdown.trim().replace(/^📋\s*/, '');
+          return `\n📋 **${badgeText}**\n\n`;
+        }
+        if (node.classList.contains('rubric-title')) {
+          return `### ${childrenMarkdown.trim()}\n\n`;
+        }
         if (node.classList.contains('rubric-container')) {
           return `\n\n${childrenMarkdown}\n\n`;
+        }
+        if (node.classList.contains('rubric-crit-name')) {
+          return `**${childrenMarkdown.trim()}**`;
+        }
+        if (node.classList.contains('rubric-crit-outof') || node.classList.contains('rubric-crit-weight') || node.classList.contains('rubric-level-points')) {
+          return `<br>*(${childrenMarkdown.trim()})*`;
+        }
+        if (node.classList.contains('rubric-cell-points')) {
+          return `**${childrenMarkdown.trim()}**<br>`;
         }
         if (node.classList.contains('offline-quiz-question')) {
           return `\n\n---\n\n${childrenMarkdown}\n\n`;
@@ -273,14 +289,24 @@ const MarkdownBuilder = {
       bodyRows = rows.slice(1);
     }
     
+    const sanitizeCell = (str) => {
+      return str
+        .trim()
+        .replace(/\|/g, '\\|')
+        .replace(/\n+/g, '<br>')
+        .replace(/(?:<br>\s*)+/g, '<br>')
+        .replace(/^<br>/, '')
+        .replace(/<br>$/, '');
+    };
+
     if (headerRow) {
-      const headers = Array.from(headerRow.querySelectorAll('th, td')).map(cell => this.nodeToMarkdown(cell).trim().replace(/\n/g, ' '));
+      const headers = Array.from(headerRow.querySelectorAll('th, td')).map(cell => sanitizeCell(this.nodeToMarkdown(cell)));
       md += `| ${headers.join(' | ')} |\n`;
       md += `| ${headers.map(() => '---').join(' | ')} |\n`;
     }
     
     for (const row of bodyRows) {
-      const cells = Array.from(row.querySelectorAll('td, th')).map(cell => this.nodeToMarkdown(cell).trim().replace(/\n/g, '<br>'));
+      const cells = Array.from(row.querySelectorAll('td, th')).map(cell => sanitizeCell(this.nodeToMarkdown(cell)));
       md += `| ${cells.join(' | ')} |\n`;
     }
     

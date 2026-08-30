@@ -20,6 +20,15 @@ const HTMLBuilder = {
     const courseInfoJson = JSON.stringify(courseInfo).replace(/</g, '\\u003c');
 
     const cleanContentHtmlJS = `
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
     function cleanContentHtml(html, title = '') {
       if (!html) return '';
       let clean = html;
@@ -439,22 +448,48 @@ const HTMLBuilder = {
       overflow: hidden;
     }
     .unit-nav-checkbox {
-      width: 14px;
-      height: 14px;
-      border-radius: 3px;
+      width: 15px;
+      height: 15px;
+      border-radius: 4px;
       border: 1.5px solid var(--text-muted);
       display: inline-flex;
       align-items: center;
       justify-content: center;
       font-size: 10px;
+      font-weight: bold;
       flex-shrink: 0;
       color: transparent;
-      transition: all 0.15s;
+      transition: all 0.15s ease;
+      cursor: pointer;
+      user-select: none;
+    }
+    .unit-nav-checkbox:hover {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.18);
+      color: #10b981;
+      transform: scale(1.1);
     }
     .unit-nav-checkbox.completed {
       background: #10b981;
       border-color: #10b981;
       color: #ffffff;
+    }
+    .unit-chevron {
+      font-size: 9px;
+      opacity: 0.65;
+      padding: 3px 5px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s ease, opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+      user-select: none;
+    }
+    .unit-chevron:hover {
+      opacity: 1;
+      background-color: var(--bg-card-hover);
+      color: var(--accent);
     }
 
     .unit-subnav-list {
@@ -806,6 +841,167 @@ const HTMLBuilder = {
       color: var(--text-muted);
       border-radius: 0 8px 8px 0;
     }
+
+    /* Rubric Container & Responsive Matrix Table */
+    .rubric-container {
+      margin-top: 24px;
+      padding: 18px 20px;
+      background: rgba(15, 23, 42, 0.45);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    [data-theme="light"] .rubric-container {
+      background: rgba(248, 250, 252, 0.95);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+    .rubric-header {
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .rubric-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      align-self: flex-start;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(99, 102, 241, 0.15);
+      color: #818cf8;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+    [data-theme="light"] .rubric-badge {
+      background: #ede9fe;
+      color: #6366f1;
+      border-color: #c7d2fe;
+    }
+    .rubric-title {
+      font-size: 15.5px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin: 0;
+    }
+    .rubric-description {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+    .rubric-table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-color) transparent;
+      margin-top: 10px;
+    }
+    .rubric-table {
+      width: 100%;
+      min-width: 650px;
+      border-collapse: collapse;
+      font-size: 13px;
+      line-height: 1.5;
+      margin: 0 !important;
+      background: var(--bg-card);
+    }
+    .rubric-table th, .rubric-table td {
+      border: 1px solid var(--border-color);
+      padding: 12px 14px;
+      vertical-align: top;
+    }
+    .rubric-table thead th {
+      background: rgba(30, 41, 59, 0.9);
+      color: var(--text-main);
+      font-weight: 600;
+      text-align: left;
+    }
+    [data-theme="light"] .rubric-table thead th {
+      background: #f1f5f9;
+      color: #1e293b;
+    }
+    .rubric-col-criterion {
+      width: 22%;
+      min-width: 140px;
+    }
+    .rubric-col-level {
+      text-align: center !important;
+      min-width: 130px;
+    }
+    .rubric-level-name {
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--text-main);
+    }
+    .rubric-level-points {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-top: 2px;
+    }
+    .rubric-cell-criterion {
+      background: rgba(15, 23, 42, 0.25);
+    }
+    [data-theme="light"] .rubric-cell-criterion {
+      background: #f8fafc;
+    }
+    .rubric-crit-name {
+      font-weight: 700;
+      color: var(--text-main);
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    .rubric-crit-outof {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    [data-theme="light"] .rubric-crit-outof {
+      background: #e2e8f0;
+      color: #475569;
+    }
+    .rubric-crit-weight {
+      font-size: 11px;
+      color: var(--accent);
+      margin-top: 2px;
+    }
+    .rubric-cell-level {
+      transition: background-color 0.15s ease;
+    }
+    .rubric-cell-level:hover {
+      background-color: rgba(99, 102, 241, 0.05);
+    }
+    .rubric-cell-points {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 6px;
+      background: rgba(99, 102, 241, 0.1);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .rubric-cell-desc {
+      color: var(--text-main);
+      font-size: 12.5px;
+    }
+    .rubric-cell-desc p {
+      margin: 0 0 6px 0;
+    }
+    .rubric-cell-desc p:last-child {
+      margin-bottom: 0;
+    }
+
     .topic-body pre {
       background: rgba(15, 23, 42, 0.85);
       border: 1px solid var(--border-color);
@@ -1793,6 +1989,7 @@ const HTMLBuilder = {
     const courseStorageKey = 'uop_progress_' + (courseInfo.id || 'default');
 
     let activeUnitIndex = 0;
+    let expandedUnits = new Set([0]);
     let currentScrollSpyObserver = null;
     let completedUnits = new Set();
     let currentFontScale = 1.0;
@@ -1877,16 +2074,6 @@ const HTMLBuilder = {
       try {
         localStorage.setItem('uop_font_scale', currentFontScale.toString());
       } catch (e) {}
-    }
-
-    function estimateReadingTime(unit) {
-      let fullText = (unit.title || '') + ' ' + (unit.description || '');
-      (unit.topics || []).forEach(t => { fullText += ' ' + (t.title || '') + ' ' + (t.contentHtml || ''); });
-      (unit.readings || []).forEach(r => { fullText += ' ' + (r.title || '') + ' ' + (r.contentHtml || ''); });
-      const clean = fullText.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();
-      const words = clean ? clean.split(' ').length : 0;
-      const minutes = Math.max(1, Math.ceil(words / 190));
-      return { words, minutes };
     }
 
     function copyApaCitation(title, contentHtml, url) {
@@ -1998,6 +2185,7 @@ const HTMLBuilder = {
         const unitIdx = units.indexOf(unit);
         const isCurrentActive = unitIdx === activeUnitIndex;
         const isCompleted = completedUnits.has(unitIdx);
+        const isExpanded = expandedUnits.has(unitIdx);
         const itemWrapper = document.createElement('div');
         itemWrapper.className = 'unit-nav-wrapper';
 
@@ -2008,19 +2196,59 @@ const HTMLBuilder = {
         item.className = 'unit-nav-item' + (isCurrentActive ? ' active' : '');
         item.innerHTML = \`
           <div class="unit-nav-title-group">
-            <span class="unit-nav-checkbox\${isCompleted ? ' completed' : ''}" title="\${isCompleted ? 'Completed' : 'Mark as complete'}">✓</span>
+            <span class="unit-nav-checkbox\${isCompleted ? ' completed' : ''}" role="button" tabindex="0" title="\${isCompleted ? 'Mark as incomplete' : 'Mark as complete'}">✓</span>
             <span>\${escapeHtml(unit.title)}</span>
           </div>
-          \${hasSections ? '<span class="unit-chevron" style="font-size: 10px; opacity: 0.6; transition: transform 0.2s ease; transform: ' + (isCurrentActive ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>' : ''}
+          \${hasSections ? '<span class="unit-chevron" title="' + (isExpanded ? 'Collapse sections' : 'Expand sections') + '" style="transform: ' + (isExpanded ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>' : ''}
         \`;
-        item.onclick = () => {
-          activeUnitIndex = unitIdx;
-          renderNav(filteredUnits);
-          renderMain();
+
+        const checkbox = item.querySelector('.unit-nav-checkbox');
+        if (checkbox) {
+          const handleCheck = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleUnitComplete(unitIdx);
+          };
+          checkbox.onclick = handleCheck;
+          checkbox.onkeydown = (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              handleCheck(e);
+            }
+          };
+        }
+
+        const chevron = item.querySelector('.unit-chevron');
+        if (chevron) {
+          chevron.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (expandedUnits.has(unitIdx)) {
+              expandedUnits.delete(unitIdx);
+            } else {
+              expandedUnits.add(unitIdx);
+            }
+            renderNav(filteredUnits);
+          };
+        }
+
+        item.onclick = (e) => {
+          if (activeUnitIndex === unitIdx) {
+            if (expandedUnits.has(unitIdx)) {
+              expandedUnits.delete(unitIdx);
+            } else {
+              expandedUnits.add(unitIdx);
+            }
+            renderNav(filteredUnits);
+          } else {
+            activeUnitIndex = unitIdx;
+            expandedUnits.add(unitIdx);
+            renderNav(filteredUnits);
+            renderMain();
+          }
         };
         itemWrapper.appendChild(item);
 
-        if (isCurrentActive && hasSections) {
+        if (isExpanded && hasSections) {
           const subnav = document.createElement('div');
           subnav.className = 'unit-subnav-list';
           sections.forEach((sec) => {
@@ -2038,6 +2266,12 @@ const HTMLBuilder = {
             subItem.onclick = (e) => {
               e.preventDefault();
               e.stopPropagation();
+              if (activeUnitIndex !== unitIdx) {
+                activeUnitIndex = unitIdx;
+                expandedUnits.add(unitIdx);
+                renderMain();
+                renderNav(filteredUnits);
+              }
               scrollToSection(sec.id);
             };
             subnav.appendChild(subItem);
@@ -2139,6 +2373,7 @@ const HTMLBuilder = {
     function goToUnit(idx) {
       if (idx < 0 || idx >= units.length) return;
       activeUnitIndex = idx;
+      expandedUnits.add(idx);
       renderNav();
       renderMain();
       const main = document.getElementById('main-content');
@@ -2161,18 +2396,13 @@ const HTMLBuilder = {
 
       const { sections, generalTopics, conclusionTopics } = getUnitSections(unit);
       const cleanDesc = cleanUnitDescription(unit.description, unit.title);
-      const readingTime = estimateReadingTime(unit);
       const isCompleted = completedUnits.has(activeUnitIndex);
 
       let html = \`
         <header class="unit-header" id="sec-header">
           <div class="unit-header-top-row">
             <div>
-              <div class="unit-meta-badges" style="margin-bottom: 6px;">
-                <span class="unit-meta-badge">⏱️ ~\${readingTime.minutes} min read</span>
-                <span class="unit-meta-badge">📝 \${readingTime.words.toLocaleString()} words</span>
-                \${isCompleted ? '<span class="unit-meta-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border-color: rgba(16, 185, 129, 0.4);">✓ Completed</span>' : ''}
-              </div>
+              \${isCompleted ? '<div class="unit-meta-badges" style="margin-bottom: 8px;"><span class="unit-meta-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border-color: rgba(16, 185, 129, 0.4);">✓ Completed</span></div>' : ''}
               <h1>\${escapeHtml(unit.title)}</h1>
             </div>
             <button type="button" class="unit-complete-toggle-btn\${isCompleted ? ' completed' : ''}" onclick="toggleUnitComplete(\${activeUnitIndex})">

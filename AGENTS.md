@@ -7,7 +7,7 @@ This document is the **single canonical source of truth** and engineering guide 
 ## 🧭 Project Purpose & Philosophy
 
 This project is a **Manifest V3 browser extension** designed for University of the People (UoPeople) students. It connects to the Brightspace (D2L) LMS at `https://learn.uopeople.edu` and exports course materials into:
-1. **Interactive Offline Website (`index.html` + `assets/`)**: A modern, self-contained single-page application with dark/light themes, live full-text search, offline KaTeX math rendering, Prism code syntax highlighting, collapsible quiz accordions, interactive document preview modal, APA citation copier, reading time estimator, study progress tracker, keyboard shortcuts, and sticky section navigation.
+1. **Interactive Offline Website (`index.html` + `assets/`)**: A modern, self-contained single-page application with dark/light themes, live full-text search, offline KaTeX math rendering, Prism code syntax highlighting, collapsible quiz accordions, interactive document preview modal, APA citation copier, interactive study progress tracker, keyboard shortcuts, and sticky section navigation.
 2. **Modular Markdown Archive (`01_Overview.md`, `02_Readings.md`, etc.)**: Structured folders matching academic note-taking standards (Obsidian, Logseq, Notion) with a master reading matrix and unified course companion file (`Master_Course_Complete.md`).
 
 ### Fundamental Architectural Tenets

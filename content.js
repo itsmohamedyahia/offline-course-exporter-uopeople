@@ -127,15 +127,32 @@
             }));
           }
 
-          if (rubricsList.length > 0) {
-            await Promise.all(rubricsList.map(async (r) => {
+          // Collect all rubric IDs from rubricsList, dropboxes, and discussion topics
+          const allRubricIds = new Set();
+          if (Array.isArray(rubricsList)) {
+            rubricsList.forEach(r => { if (r && r.RubricId) allRubricIds.add(r.RubricId); });
+          }
+          if (Array.isArray(dropboxFolders)) {
+            dropboxFolders.forEach(f => {
+              D2LApi.extractRubricIds(f).forEach(id => allRubricIds.add(id));
+            });
+          }
+          if (Array.isArray(discussionTopics)) {
+            discussionTopics.forEach(t => {
+              D2LApi.extractRubricIds(t).forEach(id => allRubricIds.add(id));
+            });
+          }
+
+          if (allRubricIds.size > 0) {
+            console.log(`Discovered ${allRubricIds.size} unique rubric IDs to resolve:`, Array.from(allRubricIds));
+            await Promise.all(Array.from(allRubricIds).map(async (rid) => {
               try {
-                const details = await D2LApi.getRubricDetails(orgUnitId, r.RubricId);
+                const details = await D2LApi.getRubricDetails(orgUnitId, rid);
                 if (details) {
-                  rubricsMap[r.RubricId] = details;
+                  rubricsMap[rid] = details;
                 }
               } catch (e) {
-                console.warn(`Failed to fetch details for rubric ${r.RubricId}:`, e);
+                console.warn(`Failed to fetch details for rubric ${rid}:`, e);
               }
             }));
           }
