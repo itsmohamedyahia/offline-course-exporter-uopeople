@@ -1,4 +1,16 @@
 document.addEventListener('DOMContentLoaded', async () => {
+  const versionTag = document.getElementById('version-tag') || document.querySelector('.version-tag');
+  if (versionTag && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) {
+    try {
+      const manifest = chrome.runtime.getManifest();
+      if (manifest && manifest.version) {
+        versionTag.textContent = `v${manifest.version.replace(/\.0$/, '')}`;
+      }
+    } catch (e) {
+      console.warn('Could not retrieve manifest version:', e);
+    }
+  }
+
   const courseCard = document.getElementById('course-card');
   const statusBadge = document.getElementById('status-badge');
   const courseTitle = document.getElementById('course-title');
