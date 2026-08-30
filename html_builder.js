@@ -602,6 +602,16 @@ const HTMLBuilder = {
       line-height: 1.5;
     }
 
+    .academic-integrity-banner {
+      background: rgba(245, 158, 11, 0.09);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--text-main);
+      line-height: 1.5;
+    }
+
     /* Sticky Unit Index / Section Jump Bar */
     .unit-index-sticky-bar {
       position: sticky;
@@ -2176,7 +2186,13 @@ const HTMLBuilder = {
       if (isShareable) {
         html += \`
           <div class="peer-safe-banner">
-            👥 <strong>Peer-Safe Study Guide:</strong> Contains syllabus overview and reading assignments for course preparation. Graded assignment prompts and quizzes are excluded in compliance with academic policies.
+            👥 <strong>Peer-Safe Study Guide:</strong> Contains syllabus overview and reading assignments for course preparation. Graded assignment prompts, rubrics, and quizzes are excluded in compliance with academic integrity policies.
+          </div>
+        \`;
+      } else {
+        html += \`
+          <div class="academic-integrity-banner">
+            🔒 <strong>Personal Use Only — Academic Integrity Notice:</strong> This full course archive contains quizzes, discussion prompts, and graded assignments intended solely for personal offline study and revision by an enrolled student. Sharing or distributing this archive with peers violates the University of the People Code of Academic Integrity.
           </div>
         \`;
       }

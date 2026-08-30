@@ -431,10 +431,10 @@ body {
   transform: translateX(14px);
 }
 
-/* Copyright / Compliance Notice */
-.copyright-warning-box {
-  background: var(--warning-bg);
-  border: 1px solid var(--warning-border);
+/* Dynamic Mode & Academic Integrity Notice */
+.notice-box {
+  background: rgba(139, 60, 100, 0.12);
+  border: 1px solid rgba(231, 79, 115, 0.3);
   border-radius: var(--radius-sm);
   padding: 7px 9px;
   display: flex;
@@ -442,23 +442,39 @@ body {
   gap: 7px;
   font-size: 10px;
   line-height: 1.35;
-  color: #fde68a;
+  color: #fce7f3;
   transition: all 0.2s ease;
 }
 
-.copyright-warning-box.highlight {
-  border-color: rgba(245, 158, 11, 0.5);
-  background: rgba(245, 158, 11, 0.16);
+.notice-box.shareable-mode {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: #d1fae5;
 }
 
-.copyright-warning-box svg {
-  color: #fbbf24;
+.notice-box .notice-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   margin-top: 1px;
 }
 
-.copyright-warning-box strong {
-  color: #fbbf24;
+.notice-box .notice-icon svg {
+  color: var(--accent-rose);
+  transition: color 0.2s ease;
+}
+
+.notice-box.shareable-mode .notice-icon svg {
+  color: #34d399;
+}
+
+.notice-box strong {
+  color: var(--accent-rose-light);
+}
+
+.notice-box.shareable-mode strong {
+  color: #34d399;
 }
 
 /* ==========================================================================

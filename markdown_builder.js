@@ -352,7 +352,12 @@ const MarkdownBuilder = {
       readmeContent += `> [!NOTE]\n`;
       readmeContent += `> **Export Mode: Shareable Study Guide (Peer-Safe)**\n`;
       readmeContent += `> This package contains the course syllabus, unit overviews, and reading assignment references intended for preparation and study.\n`;
-      readmeContent += `> Graded discussion questions, written assignment prompts, and assessment quizzes are excluded in compliance with academic policies.\n\n`;
+      readmeContent += `> Graded discussion questions, written assignment prompts, rubrics, and assessment quizzes are excluded in compliance with academic integrity policies.\n\n`;
+    } else {
+      readmeContent += `> [!WARNING]\n`;
+      readmeContent += `> **PERSONAL USE ONLY — ACADEMIC INTEGRITY NOTICE**\n`;
+      readmeContent += `> This course archive contains quiz questions, discussion prompts, grading rubrics, and assignment details generated strictly for personal offline study by an enrolled student.\n`;
+      readmeContent += `> Distributing, publishing, or sharing this archive with peers violates the University of the People Code of Academic Integrity.\n\n`;
     }
 
     readmeContent += `## Course Overview\n\n`;
@@ -372,7 +377,16 @@ const MarkdownBuilder = {
     let masterNotesContent = `# ${courseInfo.name} - Complete Course Notes\n\n`;
     masterNotesContent += `> **Course Code:** ${courseInfo.code || courseInfo.name}  \n`;
     masterNotesContent += `> **Export Date:** ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}  \n`;
-    masterNotesContent += `> **Format:** Consolidated All-In-One Study Document\n\n---\n\n`;
+    masterNotesContent += `> **Format:** Consolidated All-In-One Study Document\n\n`;
+
+    if (isShareable) {
+      masterNotesContent += `> [!NOTE]\n`;
+      masterNotesContent += `> **Peer-Safe Study Guide:** Contains course overviews, reading lists, and study notes. Graded assignments, discussion prompts, and quizzes are excluded.\n\n---\n\n`;
+    } else {
+      masterNotesContent += `> [!WARNING]\n`;
+      masterNotesContent += `> **PERSONAL USE ONLY — ACADEMIC INTEGRITY NOTICE**\n`;
+      masterNotesContent += `> This document contains quiz questions, assignments, and study materials for personal offline revision only. Sharing or distributing this document with peers violates the University of the People Code of Academic Integrity.\n\n---\n\n`;
+    }
     masterNotesContent += `## Table of Contents\n\n`;
 
     units.forEach((unit) => {

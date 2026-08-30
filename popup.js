@@ -11,19 +11,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   const progressDetail = document.getElementById('progress-detail');
   const resultMessage = document.getElementById('result-message');
   const optDownloadAssets = document.getElementById('opt-download-assets');
-  const copyrightWarningBox = document.getElementById('copyright-warning-box');
+  const modeNoticeBox = document.getElementById('mode-notice-box');
+  const noticeIcon = document.getElementById('notice-icon');
+  const noticeText = document.getElementById('notice-text');
   const scopeRadios = document.querySelectorAll('input[name="export-scope"]');
 
   let activeOrgUnitId = null;
 
-  function updateWarningHighlight() {
+  function updateModeNotice() {
     const isShareable = getSelectedScope() === 'shareable';
-    if (copyrightWarningBox) {
-      if (isShareable) {
-        copyrightWarningBox.classList.add('highlight');
-      } else {
-        copyrightWarningBox.classList.remove('highlight');
-      }
+    if (!modeNoticeBox || !noticeIcon || !noticeText) return;
+
+    if (isShareable) {
+      modeNoticeBox.className = 'notice-box shareable-mode';
+      noticeIcon.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        </svg>
+      `;
+      noticeText.innerHTML = '<strong>Peer-Safe Guide:</strong> Quizzes &amp; assignments are stripped. Safe to share for study prep. Uncheck attachments if non-OER.';
+    } else {
+      modeNoticeBox.className = 'notice-box';
+      noticeIcon.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      `;
+      noticeText.innerHTML = '<strong>Personal Study Only:</strong> Includes quizzes &amp; assignments. Sharing with peers violates the Academic Integrity Policy.';
     }
   }
 
@@ -37,7 +55,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const targetRadio = document.querySelector(`input[name="export-scope"][value="${res.exportScope}"]`);
         if (targetRadio) targetRadio.checked = true;
       }
-      updateWarningHighlight();
+      updateModeNotice();
     });
   }
 
@@ -50,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   scopeRadios.forEach(radio => {
     radio.addEventListener('change', () => {
-      updateWarningHighlight();
+      updateModeNotice();
       if (chrome.storage && chrome.storage.local) {
         chrome.storage.local.set({ exportScope: radio.value });
       }

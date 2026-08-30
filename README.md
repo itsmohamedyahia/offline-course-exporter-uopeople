@@ -11,8 +11,8 @@ A modern Manifest V3 browser extension designed for University of the People stu
 
 > [!NOTE]
 > **Academic Integrity & Sharing Guidelines:**
-> - **Personal Full Archive Mode:** Backs up all course components (syllabus, readings, discussions, assignments, self-quizzes) for your own personal revision and study.
-> - **Peer-Safe Study Guide Mode:** Exports only the syllabus, unit overviews, and reading assignment lists while automatically stripping all graded discussion prompts, written assignments, learning journals, and quiz question banks. This mode is 100% compliant with university policies to share with prospective students preparing for upcoming courses.
+> - 🔒 **Personal Full Archive Mode:** Backs up all course components (syllabus, readings, discussions, assignments, self-quizzes) strictly for your own personal offline revision and study. Sharing files containing quiz banks or assignment prompts with other students violates the UoPeople Code of Academic Integrity.
+> - 👥 **Peer-Safe Study Guide Mode:** Exports only the syllabus, unit overviews, and reading assignment lists while automatically stripping all graded discussion prompts, written assignments, learning journals, and quiz question banks. This mode is 100% compliant with university policies to share with peers preparing for upcoming courses.
 
 > [!WARNING]
 > **⚠️ Copyright Advisory for Sharing (Non-OER Textbooks):**
