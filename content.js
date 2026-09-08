@@ -280,7 +280,7 @@
         const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope, downloadAssets);
         zipFiles.push(...markdownFiles);
 
-        // Fetch attachment files & embedded PDFs if enabled
+        // Fetch attachment files & embedded PDFs if enabled into per-unit folders
         if (downloadAssets) {
           const downloadedCache = new Map(); // url -> Uint8Array
           let totalAttachments = 0;
@@ -312,7 +312,6 @@
                       });
 
                       if (result && result.success && result.base64) {
-                        // Decode base64 back to Uint8Array
                         const binaryStr = atob(result.base64);
                         bytes = new Uint8Array(binaryStr.length);
                         for (let i = 0; i < binaryStr.length; i++) {
@@ -333,6 +332,85 @@
                       content: bytes
                     });
                     console.log(`Packed asset: ${unitFolderName}/assets/${cleanFileName} (${bytes.length} bytes)`);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } else if (exportFormat === 'combined') {
+        emitProgress(72, 'Generating Markdown documents & offline interactive website...');
+        // 1. Build structured Markdown documentation archive
+        const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope, downloadAssets);
+        zipFiles.push(...markdownFiles);
+
+        // 2. Build single-page interactive HTML application with per-unit asset links
+        const htmlContent = HTMLBuilder.buildOfflineSite({
+          courseInfo: courseInfo,
+          units: units,
+          exportedAt: exportedAt,
+          exportScope: exportScope,
+          downloadAssets: downloadAssets,
+          perUnitAssets: true
+        });
+
+        zipFiles.push({
+          name: 'index.html',
+          content: htmlContent
+        });
+
+        // 3. Fetch attachments and store them strictly inside each unit folder (NO global assets folder)
+        if (downloadAssets) {
+          const downloadedCache = new Map(); // url -> Uint8Array
+          let totalAttachments = 0;
+          units.forEach(u => totalAttachments += (u.attachments ? u.attachments.length : 0));
+          let currentAttachmentIdx = 0;
+
+          for (let unitIdx = 0; unitIdx < units.length; unitIdx++) {
+            const unit = units[unitIdx];
+            const unitFolderName = `${String(unitIdx + 1).padStart(2, '0')}_${MarkdownBuilder.sanitizeFolderName(unit.title)}`;
+
+            if (unit.attachments && unit.attachments.length > 0) {
+              for (const att of unit.attachments) {
+                if (att.url) {
+                  currentAttachmentIdx++;
+                  const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
+                  emitProgress(
+                    75 + Math.round((currentAttachmentIdx / Math.max(totalAttachments, 1)) * 17),
+                    `Downloading asset (${currentAttachmentIdx}/${totalAttachments}): ${cleanFileName}`
+                  );
+
+                  let bytes = downloadedCache.get(att.url);
+                  if (!bytes) {
+                    try {
+                      const result = await new Promise((resolve) => {
+                        chrome.runtime.sendMessage(
+                          { action: 'FETCH_FILE', url: att.url },
+                          (response) => resolve(response)
+                        );
+                      });
+
+                      if (result && result.success && result.base64) {
+                        const binaryStr = atob(result.base64);
+                        bytes = new Uint8Array(binaryStr.length);
+                        for (let i = 0; i < binaryStr.length; i++) {
+                          bytes[i] = binaryStr.charCodeAt(i);
+                        }
+                        downloadedCache.set(att.url, bytes);
+                      } else {
+                        console.warn(`Background fetch failed for ${att.url}:`, result?.error);
+                      }
+                    } catch (e) {
+                      console.warn(`Could not download attachment ${att.url}:`, e);
+                    }
+                  }
+
+                  if (bytes) {
+                    zipFiles.push({
+                      name: `${unitFolderName}/assets/${cleanFileName}`,
+                      content: bytes
+                    });
+                    console.log(`Packed combined asset: ${unitFolderName}/assets/${cleanFileName} (${bytes.length} bytes)`);
                   }
                 }
               }
@@ -416,6 +494,8 @@
 
       const downloadSuffix = exportFormat === 'markdown'
         ? (exportScope === 'shareable' ? 'StudyGuide_Markdown' : 'Markdown_Offline')
+        : exportFormat === 'combined'
+        ? (exportScope === 'shareable' ? 'StudyGuide_Complete' : 'Offline')
         : (exportScope === 'shareable' ? 'StudyGuide_Offline' : 'Offline');
 
       emitProgress(98, 'Packaging complete! Sending to downloads...');

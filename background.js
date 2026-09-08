@@ -102,11 +102,68 @@ async function handleZipDownload(payload, sendResponse) {
     const zipFileName = `UoPeople_${sanitizedCourseName || `Course_${courseId}`}_${suffix || 'Offline'}.zip`;
 
     // Triggers a SINGLE download prompt for the entire course package (.zip)
-    await chrome.downloads.download({
+    const downloadId = await chrome.downloads.download({
       url: zipDataUrl,
       filename: zipFileName,
       saveAs: false
     });
+
+    // Notify local PushPopFlow/unpacker automation once the download has fully written to disk
+    let unpackerNotified = false;
+    const notifyUnpacker = () => {
+      if (unpackerNotified) return;
+      unpackerNotified = true;
+      try {
+        if (chrome.downloads && chrome.downloads.onChanged && chrome.downloads.onChanged.hasListener(onDownloadChanged)) {
+          chrome.downloads.onChanged.removeListener(onDownloadChanged);
+        }
+      } catch (e) {}
+
+      chrome.storage.local.get(['activeCoursesFolder'], (st) => {
+        const activeFolder = st?.activeCoursesFolder || 'S:\\01_ACADEMIC_STUDY\\UoPeople as Student\\01_ACTIVE_COURSES';
+        fetch('http://127.0.0.1:4049/process-courses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: zipFileName,
+            courseName: sanitizedCourseName,
+            activeCoursesFolder: activeFolder,
+            downloadId: downloadId
+          })
+        }).catch(() => {});
+      });
+    };
+
+    const onDownloadChanged = (delta) => {
+      if (delta.id === downloadId && delta.state) {
+        if (delta.state.current === 'complete') {
+          notifyUnpacker();
+        } else if (delta.state.current === 'interrupted') {
+          try {
+            if (chrome.downloads.onChanged.hasListener(onDownloadChanged)) {
+              chrome.downloads.onChanged.removeListener(onDownloadChanged);
+            }
+          } catch (e) {}
+          console.warn('Course download was interrupted:', delta.error);
+        }
+      }
+    };
+
+    if (chrome.downloads && chrome.downloads.onChanged) {
+      chrome.downloads.onChanged.addListener(onDownloadChanged);
+    }
+
+    // Safety: check if download was instantaneous or set a fallback timeout
+    if (chrome.downloads && chrome.downloads.search) {
+      chrome.downloads.search({ id: downloadId }, (items) => {
+        if (items && items[0] && items[0].state === 'complete') {
+          notifyUnpacker();
+        }
+      });
+    }
+    setTimeout(() => {
+      if (!unpackerNotified) notifyUnpacker();
+    }, 25000);
 
     sendResponse({ success: true, fileName: zipFileName });
   } catch (err) {

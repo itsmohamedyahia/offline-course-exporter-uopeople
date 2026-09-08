@@ -398,3 +398,95 @@ body {
   background: var(--bg-card-hover);
   border-color: var(--border-card-hover);
 }
+
+/* ==========================================================================
+   Folder Setup Card in Onboarding
+   ========================================================================== */
+.folder-setup-card {
+  background: var(--bg-card-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+}
+
+.folder-setup-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.folder-icon-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(231, 79, 115, 0.12);
+  color: var(--accent-rose-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.folder-setup-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.folder-setup-info strong {
+  font-size: 13px;
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.folder-setup-info span {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.folder-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.onboarding-input {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  flex-grow: 1;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.onboarding-input:focus {
+  border-color: var(--border-card-hover);
+  box-shadow: 0 0 0 2px rgba(231, 79, 115, 0.2);
+}
+
+.btn-reset-input {
+  padding: 7px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-reset-input:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+}

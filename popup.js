@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const courseCompletedBadge = document.getElementById('course-completed-badge');
   const courseTitle = document.getElementById('course-title');
   const courseMeta = document.getElementById('course-meta');
+  const btnExportCombined = document.getElementById('btn-export-combined');
   const btnExport = document.getElementById('btn-export');
   const btnExportMarkdown = document.getElementById('btn-export-markdown');
   const btnMarkCompleted = document.getElementById('btn-mark-completed');
@@ -197,6 +198,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusBadge.className = 'status-indicator active';
     courseTitle.textContent = cleanCourseName(response.courseInfo && response.courseInfo.name) || (response.courseInfo && response.courseInfo.name) || `Course ${response.orgUnitId}`;
     courseMeta.textContent = `Course OrgUnit ID: ${response.orgUnitId}`;
+    if (btnExportCombined) btnExportCombined.disabled = false;
     btnExport.disabled = false;
     btnExportMarkdown.disabled = false;
     if (btnMarkCompleted) btnMarkCompleted.disabled = false;
@@ -293,7 +295,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Handle Export button click
+  // Handle Combined Export button click (Primary)
+  if (btnExportCombined) {
+    btnExportCombined.addEventListener('click', () => {
+      startExport('combined');
+    });
+  }
+
+  // Handle HTML Export button click
   btnExport.addEventListener('click', () => {
     startExport('html');
   });
@@ -308,6 +317,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const exportScope = getSelectedScope();
 
+    if (btnExportCombined) btnExportCombined.disabled = true;
     btnExport.disabled = true;
     btnExportMarkdown.disabled = true;
     progressSection.classList.remove('hidden');
@@ -329,6 +339,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (chrome.runtime.lastError || !response || !response.success) {
         const err = (response && response.error) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'Export failed.';
         updateProgress(0, `Error: ${err}`);
+        if (btnExportCombined) btnExportCombined.disabled = false;
         btnExport.disabled = false;
         btnExportMarkdown.disabled = false;
         return;
@@ -338,6 +349,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       setTimeout(() => {
         progressSection.classList.add('hidden');
         resultMessage.classList.remove('hidden');
+        if (btnExportCombined) btnExportCombined.disabled = false;
         btnExport.disabled = false;
         btnExportMarkdown.disabled = false;
       }, 1000);

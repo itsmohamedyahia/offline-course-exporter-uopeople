@@ -4,7 +4,7 @@
  */
 const HTMLBuilder = {
   buildOfflineSite(courseData) {
-    const { courseInfo, units, exportedAt, exportScope = 'full', downloadAssets = true } = courseData;
+    const { courseInfo, units, exportedAt, exportScope = 'full', downloadAssets = true, perUnitAssets = false } = courseData;
     const isShareable = exportScope === 'shareable';
 
     const escapeHtml = (str) => {
@@ -1986,7 +1986,20 @@ const HTMLBuilder = {
     const courseInfo = ${courseInfoJson};
     const isShareable = ${isShareable};
     const downloadAssets = ${Boolean(downloadAssets)};
+    const perUnitAssets = ${Boolean(perUnitAssets)};
     const courseStorageKey = 'uop_progress_' + (courseInfo.id || 'default');
+
+    function getUnitFolderName(unit, index) {
+      if (!unit) return 'Unit';
+      const cleanTitle = (unit.title || 'Unit')
+        .replace(/[\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]/g, ' ')
+        .replace(/[\\\\/:*?"<>|]/g, '_')
+        .trim()
+        .replace(/_+/g, '_')
+        .replace(/\\s+/g, ' ')
+        .replace(/^_+|_+$/g, '');
+      return \`\${String(index + 1).padStart(2, '0')}_\${cleanTitle || 'Unit'}\`;
+    }
 
     let activeUnitIndex = 0;
     let expandedUnits = new Set([0]);
@@ -2666,7 +2679,8 @@ const HTMLBuilder = {
               \${unit.attachments.map(att => {
                 const isLocal = downloadAssets;
                 const cleanFile = att.localFileName || (att.title.replace(/[^a-zA-Z0-9_.-]/g, '_') + '.' + (att.ext || 'pdf'));
-                const localHref = 'assets/' + cleanFile;
+                const unitFolderPrefix = (perUnitAssets && typeof getUnitFolderName === 'function') ? (getUnitFolderName(unit, activeUnitIndex) + '/') : '';
+                const localHref = unitFolderPrefix + 'assets/' + cleanFile;
                 const href = isLocal ? localHref : (att.url || '#');
                 const isPdf = (att.ext || '').toLowerCase() === 'pdf' || cleanFile.toLowerCase().endsWith('.pdf');
 
@@ -2784,7 +2798,7 @@ const HTMLBuilder = {
       });
 
       // Add click listeners to inline assets/*.pdf links to open preview modal
-      main.querySelectorAll('a[href^="assets/"]').forEach(link => {
+      main.querySelectorAll('a[href*="/assets/"], a[href^="assets/"]').forEach(link => {
         const href = link.getAttribute('href') || '';
         if (href.toLowerCase().endsWith('.pdf')) {
           link.addEventListener('click', (e) => {

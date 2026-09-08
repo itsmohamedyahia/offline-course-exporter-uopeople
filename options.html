@@ -225,10 +225,33 @@
         </div>
 
         <div class="settings-grid">
+          <div class="setting-item vertical-item">
+            <div class="setting-info">
+              <strong>Active Courses Directory</strong>
+              <span>Folder where course ZIPs are extracted and organized into unit coursework subfolders.</span>
+            </div>
+            <div class="input-with-action">
+              <input type="text" class="text-input" id="opt-active-courses-folder" value="S:\01_ACADEMIC_STUDY\UoPeople as Student\01_ACTIVE_COURSES" placeholder="S:\01_ACADEMIC_STUDY\UoPeople as Student\01_ACTIVE_COURSES">
+              <button type="button" class="btn btn-sm btn-secondary" id="btn-reset-active-courses-folder" title="Reset to default path">Reset</button>
+            </div>
+          </div>
+
+          <div class="setting-item">
+            <div class="setting-info">
+              <strong>Default Export Format</strong>
+              <span>Choose default package format. Combined includes both interactive HTML and Markdown notes with unit-scoped assets.</span>
+            </div>
+            <select class="custom-select" id="opt-export-format">
+              <option value="combined" selected>Combined (HTML Website + Markdown Notes - Recommended)</option>
+              <option value="html">HTML Interactive Website Only</option>
+              <option value="markdown">Markdown Notes Archive Only</option>
+            </select>
+          </div>
+
           <div class="setting-item">
             <div class="setting-info">
               <strong>Download Course Attachments &amp; PDFs</strong>
-              <span>Saves reading files, syllabi, and assignment PDFs locally into <code>assets/</code>.</span>
+              <span>Saves reading files, syllabi, and assignment PDFs locally into unit <code>assets/</code> folders.</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="opt-download-assets" checked>

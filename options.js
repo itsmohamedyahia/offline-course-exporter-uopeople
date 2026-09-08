@@ -15,6 +15,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const autoMarkBadge = document.getElementById('auto-mark-status-badge');
   const optDownloadAssets = document.getElementById('opt-download-assets');
   const optExportScope = document.getElementById('opt-export-scope');
+  const optExportFormat = document.getElementById('opt-export-format');
+  const optActiveCoursesFolder = document.getElementById('opt-active-courses-folder');
+  const btnResetActiveCoursesFolder = document.getElementById('btn-reset-active-courses-folder');
+
+  const DEFAULT_ACTIVE_FOLDER = 'S:\\01_ACADEMIC_STUDY\\UoPeople as Student\\01_ACTIVE_COURSES';
 
   const activeTabDesc = document.getElementById('active-tab-desc');
   const btnRefreshActiveTab = document.getElementById('btn-refresh-active-tab');
@@ -75,7 +80,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function loadStoredSettings() {
     if (!chrome.storage || !chrome.storage.local) return;
 
-    chrome.storage.local.get(['autoMarkCompleted', 'optDownloadAssets', 'exportScope', 'markedCourses'], (res) => {
+    chrome.storage.local.get(['autoMarkCompleted', 'optDownloadAssets', 'exportScope', 'exportFormat', 'activeCoursesFolder', 'markedCourses'], (res) => {
       // Auto-Mark
       const isAutoMark = !!res.autoMarkCompleted;
       optAutoMark.checked = isAutoMark;
@@ -89,6 +94,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Export scope
       if (res.exportScope && optExportScope) {
         optExportScope.value = res.exportScope;
+      }
+
+      // Export format
+      if (optExportFormat) {
+        optExportFormat.value = res.exportFormat || 'combined';
+      }
+
+      // Active courses folder
+      if (optActiveCoursesFolder) {
+        optActiveCoursesFolder.value = res.activeCoursesFolder || DEFAULT_ACTIVE_FOLDER;
       }
 
       // Marked courses
@@ -118,6 +133,35 @@ document.addEventListener('DOMContentLoaded', async () => {
       showToast('Default export mode updated.');
     });
   });
+
+  if (optExportFormat) {
+    optExportFormat.addEventListener('change', () => {
+      chrome.storage.local.set({ exportFormat: optExportFormat.value }, () => {
+        showToast('Default export format updated.');
+      });
+    });
+  }
+
+  if (optActiveCoursesFolder) {
+    optActiveCoursesFolder.addEventListener('change', () => {
+      const val = (optActiveCoursesFolder.value || '').trim() || DEFAULT_ACTIVE_FOLDER;
+      optActiveCoursesFolder.value = val;
+      chrome.storage.local.set({ activeCoursesFolder: val }, () => {
+        showToast('Active courses directory updated.');
+      });
+    });
+  }
+
+  if (btnResetActiveCoursesFolder) {
+    btnResetActiveCoursesFolder.addEventListener('click', () => {
+      if (optActiveCoursesFolder) {
+        optActiveCoursesFolder.value = DEFAULT_ACTIVE_FOLDER;
+        chrome.storage.local.set({ activeCoursesFolder: DEFAULT_ACTIVE_FOLDER }, () => {
+          showToast('Reset to default active courses directory.');
+        });
+      }
+    });
+  }
 
   // 5. Render Marked Courses History Table
   function renderMarkedCoursesTable(markedCoursesMap) {
