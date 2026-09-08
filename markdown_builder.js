@@ -264,6 +264,42 @@ const MarkdownBuilder = {
         if (node.classList.contains('rubric-cell-points')) {
           return `**${childrenMarkdown.trim()}**<br>`;
         }
+        if (node.classList.contains('quiz-score-banner')) {
+          const scoreText = (node.textContent || '').replace(/\s+/g, ' ').trim();
+          return `\n\n> 📊 **Quiz Attempt Score & Grade:** ${scoreText}\n\n`;
+        }
+        if (node.classList.contains('quiz-question-header')) {
+          return `\n\n### ${childrenMarkdown.trim()}\n\n`;
+        }
+        if (node.classList.contains('quiz-points-badge')) {
+          return ` *(${childrenMarkdown.trim()})*`;
+        }
+        if (node.classList.contains('quiz-prompt-text')) {
+          return `\n\n${childrenMarkdown.trim()}\n\n`;
+        }
+        if (node.classList.contains('quiz-options-list')) {
+          return `\n${childrenMarkdown}\n`;
+        }
+        if (node.classList.contains('quiz-option-item')) {
+          const isCorrect = node.classList.contains('is-correct');
+          const isSelected = node.classList.contains('is-selected');
+          const optTextEl = node.querySelector('.quiz-option-text');
+          const optText = optTextEl ? this.nodeToMarkdown(optTextEl).trim() : childrenMarkdown.trim().replace(/^[🔘⚪]\s*/, '').replace(/✅.*|❌.*/, '').trim();
+          
+          if (isCorrect && isSelected) {
+            return `- [x] **${optText}** ✅ *(Correct & Your Answer)*\n`;
+          } else if (isCorrect) {
+            return `- [ ] **${optText}** ✅ *(Correct Answer)*\n`;
+          } else if (isSelected) {
+            return `- [x] ~~${optText}~~ ❌ *(Your Answer)*\n`;
+          } else {
+            return `- [ ] ${optText}\n`;
+          }
+        }
+        if (node.classList.contains('quiz-feedback-card')) {
+          const cleanFb = childrenMarkdown.replace(/💡\s*Explanation\s*&amp;\s*Feedback/gi, '').replace(/💡\s*Explanation\s*&\s*Feedback/gi, '').trim();
+          return `\n> 💡 **Explanation & Feedback:**\n> ${cleanFb.replace(/\n+/g, '\n> ')}\n\n`;
+        }
         if (node.classList.contains('offline-quiz-question')) {
           return `\n\n---\n\n${childrenMarkdown}\n\n`;
         }

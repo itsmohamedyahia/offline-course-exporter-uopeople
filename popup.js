@@ -13,22 +13,39 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const courseCard = document.getElementById('course-card');
   const statusBadge = document.getElementById('status-badge');
+  const courseCompletedBadge = document.getElementById('course-completed-badge');
   const courseTitle = document.getElementById('course-title');
   const courseMeta = document.getElementById('course-meta');
   const btnExport = document.getElementById('btn-export');
   const btnExportMarkdown = document.getElementById('btn-export-markdown');
+  const btnMarkCompleted = document.getElementById('btn-mark-completed');
+  const btnMarkCompletedText = document.getElementById('btn-mark-completed-text');
+  const btnOpenSettings = document.getElementById('btn-open-settings');
+  const footerSettingsLink = document.getElementById('footer-settings-link');
   const progressSection = document.getElementById('progress-section');
   const progressFill = document.getElementById('progress-fill');
   const progressPercent = document.getElementById('progress-percent');
   const progressDetail = document.getElementById('progress-detail');
   const resultMessage = document.getElementById('result-message');
   const optDownloadAssets = document.getElementById('opt-download-assets');
+  const optAutoMark = document.getElementById('opt-auto-mark');
   const modeNoticeBox = document.getElementById('mode-notice-box');
   const noticeIcon = document.getElementById('notice-icon');
   const noticeText = document.getElementById('notice-text');
   const scopeRadios = document.querySelectorAll('input[name="export-scope"]');
 
   let activeOrgUnitId = null;
+
+  function openSettingsPage() {
+    if (chrome.runtime.openOptionsPage) {
+      chrome.runtime.openOptionsPage();
+    } else {
+      window.open(chrome.runtime.getURL('options.html'));
+    }
+  }
+
+  if (btnOpenSettings) btnOpenSettings.addEventListener('click', openSettingsPage);
+  if (footerSettingsLink) footerSettingsLink.addEventListener('click', (e) => { e.preventDefault(); openSettingsPage(); });
 
   function updateModeNotice() {
     const isShareable = getSelectedScope() === 'shareable';
@@ -59,9 +76,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Restore stored preferences
   if (chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(['optDownloadAssets', 'exportScope'], (res) => {
+    chrome.storage.local.get(['optDownloadAssets', 'exportScope', 'autoMarkCompleted'], (res) => {
       if (res.optDownloadAssets !== undefined) {
         optDownloadAssets.checked = res.optDownloadAssets;
+      }
+      if (res.autoMarkCompleted !== undefined && optAutoMark) {
+        optAutoMark.checked = res.autoMarkCompleted;
       }
       if (res.exportScope) {
         const targetRadio = document.querySelector(`input[name="export-scope"][value="${res.exportScope}"]`);
@@ -77,6 +97,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.storage.local.set({ optDownloadAssets: optDownloadAssets.checked });
     }
   });
+
+  if (optAutoMark) {
+    optAutoMark.addEventListener('change', () => {
+      if (chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ autoMarkCompleted: optAutoMark.checked });
+      }
+    });
+  }
 
   scopeRadios.forEach(radio => {
     radio.addEventListener('change', () => {
@@ -124,12 +152,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (msg.action === 'EXPORT_PROGRESS') {
       updateProgress(msg.percent, msg.status);
     }
+    if (msg.action === 'COURSE_MARK_PROGRESS' && activeOrgUnitId && String(msg.orgUnitId) === String(activeOrgUnitId)) {
+      progressSection.classList.remove('hidden');
+      updateProgress(msg.percent, msg.status);
+    }
+    if (msg.action === 'COURSE_MARKED_COMPLETED' && activeOrgUnitId && String(msg.orgUnitId) === String(activeOrgUnitId)) {
+      const res = msg.result || {};
+      const count = res.verified !== undefined ? res.verified : (res.visited || 0);
+      updateProgress(100, `Done! Verified ${count} of ${res.total || 0} topics.`);
+      if (courseCompletedBadge) {
+        courseCompletedBadge.classList.remove('hidden');
+        courseCompletedBadge.textContent = '✓ Completed';
+      }
+      if (btnMarkCompletedText) btnMarkCompletedText.textContent = 'Re-Mark Topics Completed';
+      setTimeout(() => {
+        if (progressSection) progressSection.classList.add('hidden');
+      }, 3500);
+    }
   });
 
   function handleCourseStatusResponse(response) {
     if (!response || !response.detected) {
       statusBadge.textContent = 'No Course ID';
       statusBadge.className = 'status-indicator searching';
+      if (courseCompletedBadge) courseCompletedBadge.classList.add('hidden');
       courseTitle.textContent = 'Brightspace Page Loaded';
       courseMeta.textContent = 'Navigate into a specific course (e.g. Course Home or Unit Lesson page).';
       return;
@@ -142,6 +188,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     courseMeta.textContent = `Course OrgUnit ID: ${response.orgUnitId}`;
     btnExport.disabled = false;
     btnExportMarkdown.disabled = false;
+    if (btnMarkCompleted) btnMarkCompleted.disabled = false;
+
+    if (response.isMarked) {
+      if (courseCompletedBadge) {
+        courseCompletedBadge.classList.remove('hidden');
+        courseCompletedBadge.textContent = '✓ Completed';
+        courseCompletedBadge.title = response.markedInfo ? `Marked on ${new Date(response.markedInfo.markedAt).toLocaleDateString()}` : 'Course completed';
+      }
+      if (btnMarkCompletedText) btnMarkCompletedText.textContent = 'Re-Mark Topics Completed';
+    } else {
+      if (courseCompletedBadge) courseCompletedBadge.classList.add('hidden');
+      if (btnMarkCompletedText) btnMarkCompletedText.textContent = 'Mark All Topics Completed';
+    }
   }
 
   // Ping content script with auto-injection fallback for already-open tabs
@@ -177,6 +236,51 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   checkCourseStatus();
+
+  // Handle Mark Completed button click
+  if (btnMarkCompleted) {
+    btnMarkCompleted.addEventListener('click', () => {
+      if (!activeOrgUnitId || !tab || !tab.id) return;
+
+      btnExport.disabled = true;
+      btnExportMarkdown.disabled = true;
+      btnMarkCompleted.disabled = true;
+      progressSection.classList.remove('hidden');
+      resultMessage.classList.add('hidden');
+
+      updateProgress(5, 'Fetching course Table of Contents to mark completed...');
+
+      chrome.tabs.sendMessage(tab.id, {
+        action: 'MARK_COURSE_COMPLETED',
+        orgUnitId: activeOrgUnitId,
+        showToast: true
+      }, (response) => {
+        btnExport.disabled = false;
+        btnExportMarkdown.disabled = false;
+        btnMarkCompleted.disabled = false;
+
+        if (chrome.runtime.lastError || !response || !response.success) {
+          const err = (response && response.error) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'Failed to mark topics.';
+          updateProgress(0, `Error: ${err}`);
+          return;
+        }
+
+        const res = response.result || {};
+        if (res.inProgress) {
+          updateProgress(50, 'Course topic completion is actively running in background...');
+          return;
+        }
+
+        updateProgress(100, `Done! Marked ${res.completed || 0} of ${res.total || 0} topics completed.`);
+        if (courseCompletedBadge) courseCompletedBadge.classList.remove('hidden');
+        if (btnMarkCompletedText) btnMarkCompletedText.textContent = 'Re-Mark Topics Completed';
+
+        setTimeout(() => {
+          progressSection.classList.add('hidden');
+        }, 2500);
+      });
+    });
+  }
 
   // Handle Export button click
   btnExport.addEventListener('click', () => {

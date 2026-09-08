@@ -95,11 +95,64 @@ const D2LApi = {
     }
   },
 
+  // Unpack and decode all <d2l-html-block html="..."> custom web components into standard HTML
+  unpackD2LHtmlBlocks(htmlOrDoc) {
+    if (!htmlOrDoc) return '';
+    try {
+      let doc;
+      const isString = typeof htmlOrDoc === 'string';
+      if (isString) {
+        if (!htmlOrDoc.includes('d2l-html-block')) return htmlOrDoc;
+        doc = new DOMParser().parseFromString(htmlOrDoc, 'text/html');
+      } else {
+        doc = htmlOrDoc;
+      }
+
+      const decodeEntities = (str) => {
+        if (!str) return '';
+        const ta = (doc.createElement ? doc : document).createElement('textarea');
+        ta.innerHTML = str;
+        return ta.value;
+      };
+
+      const blocks = (doc.body || doc).querySelectorAll('d2l-html-block');
+      blocks.forEach(block => {
+        const isInline = block.hasAttribute('inline');
+        const htmlAttr = block.getAttribute('html');
+        let innerContent = '';
+
+        if (htmlAttr !== null && htmlAttr !== undefined) {
+          innerContent = decodeEntities(htmlAttr);
+        } else {
+          const renderedDiv = block.querySelector('.d2l-html-block-rendered');
+          if (renderedDiv) {
+            innerContent = renderedDiv.innerHTML;
+          } else {
+            innerContent = block.innerHTML || block.textContent || '';
+          }
+        }
+
+        const rep = (doc.createElement ? doc : document).createElement(isInline ? 'span' : 'div');
+        rep.className = isInline ? 'd2l-unpacked-inline' : 'd2l-unpacked-block';
+        rep.innerHTML = innerContent;
+        if (block.parentNode) {
+          block.parentNode.replaceChild(rep, block);
+        }
+      });
+
+      return isString ? (doc.body ? doc.body.innerHTML : '') : doc;
+    } catch (e) {
+      console.warn('Failed to unpack d2l-html-block:', e);
+      return typeof htmlOrDoc === 'string' ? htmlOrDoc : '';
+    }
+  },
+
   cleanHtml(htmlStr) {
     if (!htmlStr) return '';
     try {
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlStr, 'text/html');
+      this.unpackD2LHtmlBlocks(doc);
       let changed = false;
       doc.querySelectorAll('img').forEach(img => {
         const src = (img.getAttribute('src') || '').toLowerCase();
@@ -108,7 +161,7 @@ const D2LApi = {
           changed = true;
         }
       });
-      return changed ? doc.body.innerHTML : htmlStr;
+      return doc.body.innerHTML;
     } catch (e) {
       console.warn('Failed to clean HTML via DOMParser:', e);
       return htmlStr.replace(/<img[^>]*(logo_shield|logominimal|pagebreak_icon)[^>]*>/gi, '');
@@ -147,15 +200,26 @@ const D2LApi = {
     if (!urlStr) return false;
     const lower = urlStr.toLowerCase();
     
-    // Exclude HTML files from being recognized as assets/attachments
+    // 1. Reject Brightspace template macros and unresolved placeholder tokens
+    if (urlStr.includes('$@') || lower.includes('courseviewbyid') || /\{[a-zA-Z0-9_-]+\}/.test(urlStr)) {
+      return false;
+    }
+
+    // 2. Exclude HTML files from being recognized as assets/attachments
     if (/\.html?(\?|#|$)/i.test(lower)) {
       return false;
     }
 
     const docExtRegex = /\.(pdf|docx?|pptx?|xlsx?|zip|rar|txt|csv|rtf|odt|ods|odp|png|jpe?g|gif|svg|mp3|mp4)(\?|#|$)/i;
+    
+    // For /content/enforced/ paths, strictly require a recognized file extension
+    // to avoid treating unresolved LMS macro paths as downloadable files
+    if (lower.includes('/content/enforced/')) {
+      return docExtRegex.test(lower);
+    }
+
     return docExtRegex.test(lower) ||
            lower.includes('iscoursefile=true') ||
-           lower.includes('/content/enforced/') ||
            lower.includes('/topics/files/download/');
   },
 
@@ -163,6 +227,13 @@ const D2LApi = {
     if (!title && !urlStr) return true;
     const lowerTitle = (title || '').toLowerCase();
     const lowerUrl = (urlStr || '').toLowerCase();
+
+    // Reject unrendered macros or broken URLs
+    if ((urlStr && (urlStr.includes('$@') || lowerUrl.includes('courseviewbyid') || /\{[a-zA-Z0-9_-]+\}/.test(urlStr))) ||
+        (title && (title.includes('$@') || lowerTitle.includes('courseviewbyid')))) {
+      return false;
+    }
+
     // Exclude generic LMS UI theme assets / logos
     if (lowerUrl.includes('html-template-library') || lowerUrl.includes('courseware_html_templates')) {
       return false;
@@ -439,35 +510,41 @@ const D2LApi = {
 
   // Fetch quizzes list by scraping student-facing LMS quizzes_list.d2l page
   async getQuizzesFromLms(orgUnitId) {
-    try {
-      const url = `/d2l/lms/quizzing/user/quizzes_list.d2l?ou=${orgUnitId}`;
-      const resp = await fetch(this.toAbsoluteUrl(url));
-      if (!resp.ok) return [];
-      
-      const htmlText = await resp.text();
-      const doc = new DOMParser().parseFromString(htmlText, 'text/html');
-      const quizMap = [];
+    const quizMap = [];
+    const urlsToTry = [
+      `/d2l/lms/quizzing/user/quizzes_list.d2l?ou=${orgUnitId}`,
+      `/d2l/lms/quizzes/user/quizzes_list.d2l?ou=${orgUnitId}`
+    ];
 
-      doc.querySelectorAll('a[href*="quiz_summary.d2l"], a[href*="quiz_submissions.d2l"], a[href*="qi="]').forEach(a => {
-        const href = a.getAttribute('href') || '';
-        const match = href.match(/[?&]qi=(\d+)/i);
-        if (match) {
-          const quizId = parseInt(match[1], 10);
-          const title = a.innerText ? a.innerText.trim() : '';
-          if (quizId && title) {
-            quizMap.push({
-              QuizId: quizId,
-              Name: title,
-              href: href
-            });
+    for (const url of urlsToTry) {
+      try {
+        const resp = await fetch(this.toAbsoluteUrl(url));
+        if (!resp.ok) continue;
+        
+        const htmlText = await resp.text();
+        const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+
+        doc.querySelectorAll('a[href*="quiz_summary.d2l"], a[href*="quiz_submissions.d2l"], a[href*="qi="]').forEach(a => {
+          const href = a.getAttribute('href') || '';
+          const match = href.match(/[?&]qi=(\d+)/i);
+          if (match) {
+            const quizId = parseInt(match[1], 10);
+            const title = a.innerText ? a.innerText.trim() : (a.textContent ? a.textContent.trim() : '');
+            if (quizId && title && !quizMap.some(q => q.QuizId === quizId)) {
+              quizMap.push({
+                QuizId: quizId,
+                Name: title,
+                href: href
+              });
+            }
           }
-        }
-      });
-      return quizMap;
-    } catch (e) {
-      console.warn('Failed to parse quizzes_list.d2l:', e);
-      return [];
+        });
+        if (quizMap.length > 0) break;
+      } catch (e) {
+        console.warn(`Failed to parse quizzes list from ${url}:`, e);
+      }
     }
+    return quizMap;
   },
 
   // Fetch quiz attempt details HTML and extract questions & answers
@@ -477,14 +554,67 @@ const D2LApi = {
     try {
       let quizId = null;
       
-      // 1. Try to extract qi from the topic URL
-      let match = topicUrl ? topicUrl.match(/[?&]qi=(\d+)/i) : null;
-      if (match) {
-        quizId = parseInt(match[1], 10);
+      // 1. Direct toolItemId or item properties if already resolved
+      if (item.toolItemId) {
+        quizId = parseInt(item.toolItemId, 10);
+      } else if (item.ToolItemId) {
+        quizId = parseInt(item.ToolItemId, 10);
+      }
+
+      // 2. Try to extract qi from the topic URL
+      if (!quizId && topicUrl) {
+        const match = topicUrl.match(/[?&]qi=(\d+)/i);
+        if (match) {
+          quizId = parseInt(match[1], 10);
+        }
+      }
+
+      // 3. Try to extract from activityId (e.g. .../quiz/...-10323)
+      if (!quizId && (item.activityId || item.ActivityId)) {
+        const actId = item.activityId || item.ActivityId;
+        const actMatch = actId.match(/quiz\/[^-]+-(\d+)/i) || actId.match(/quiz\/(\d+)/i);
+        if (actMatch) {
+          quizId = parseInt(actMatch[1], 10);
+        }
+      }
+
+      // 4. Query Valence Content Topic endpoint if topic ID is available
+      if (!quizId && item.id && orgUnitId) {
+        const apiVersions = ['1.54', '1.43', '1.30', '1.0'];
+        for (const ver of apiVersions) {
+          try {
+            const topicResp = await fetch(`/d2l/api/le/${ver}/${orgUnitId}/content/topics/${item.id}`, {
+              headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            if (topicResp.ok) {
+              const topicData = await topicResp.json();
+              if (topicData.ToolItemId) {
+                quizId = parseInt(topicData.ToolItemId, 10);
+                break;
+              }
+              if (topicData.Url) {
+                const qMatch = topicData.Url.match(/[?&]qi=(\d+)/i);
+                if (qMatch) {
+                  quizId = parseInt(qMatch[1], 10);
+                  break;
+                }
+              }
+              if (topicData.ActivityId) {
+                const aMatch = topicData.ActivityId.match(/quiz\/[^-]+-(\d+)/i) || topicData.ActivityId.match(/quiz\/(\d+)/i);
+                if (aMatch) {
+                  quizId = parseInt(aMatch[1], 10);
+                  break;
+                }
+              }
+            }
+          } catch (e) {
+            // continue to next fallback
+          }
+        }
       }
       
-      // 2. Try to match by name from quizzesList
-      if (!quizId) {
+      // 5. Try to match by name from quizzesList
+      if (!quizId && quizzesList && quizzesList.length > 0) {
         const cleanTopicTitle = this.cleanNameForMatching(topicTitle);
         const matched = quizzesList.find(q => {
           const cleanQName = this.cleanNameForMatching(q.Name || q.Title);
@@ -495,14 +625,23 @@ const D2LApi = {
         }
       }
       
-      // 3. If still not found, try to resolve quicklink response text
+      // 6. If still not found, try to resolve quicklink / topicUrl response and follow redirects
       if (!quizId && topicUrl) {
         try {
           const resp = await fetch(this.toAbsoluteUrl(topicUrl));
-          const text = await resp.text();
-          const textMatch = text.match(/[?&]qi=(\d+)/i) || text.match(/quiz_summary\.d2l\?[^"']*\bqi=(\d+)/i);
-          if (textMatch) {
-            quizId = parseInt(textMatch[1], 10);
+          if (resp.url) {
+            const redirectMatch = resp.url.match(/[?&]qi=(\d+)/i);
+            if (redirectMatch) {
+              quizId = parseInt(redirectMatch[1], 10);
+            }
+          }
+          if (!quizId) {
+            const text = await resp.text();
+            const unescapedText = text.replace(/\\\//g, '/');
+            const textMatch = unescapedText.match(/[?&]qi=(\d+)/i) || unescapedText.match(/quiz_summary\.d2l\?[^"']*\bqi=(\d+)/i);
+            if (textMatch) {
+              quizId = parseInt(textMatch[1], 10);
+            }
           }
         } catch (e) {
           console.warn('Failed to resolve quicklink for quiz ID:', e);
@@ -515,86 +654,62 @@ const D2LApi = {
                 </div>`;
       }
       
-      // 4. Try fetching attempts list via Valence API first
+      // 7. Discover Completed Attempt Submission URL
       let attemptUrl = null;
-      try {
-        const attemptsResp = await fetch(`/d2l/api/le/1.30/${orgUnitId}/quizzes/${quizId}/attempts/`, {
-          headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        if (attemptsResp.ok) {
-          const attemptsData = await attemptsResp.json();
-          const attemptsList = Array.isArray(attemptsData) ? attemptsData : (attemptsData.Objects || []);
-          if (attemptsList.length > 0) {
-            console.log(`[Quiz Exporter Debug] Quiz ${quizId} raw attempts:`, attemptsList);
-            // Filter out attempts that are still in-progress (Completed date is null)
-            const completedAttempts = attemptsList.filter(a => {
-              const isCompleted = (a.Completed !== null && a.Completed !== undefined && a.Completed !== '') ||
-                                  (a.CompletedDate !== null && a.CompletedDate !== undefined && a.CompletedDate !== '') ||
-                                  (a.Score !== null && a.Score !== undefined) ||
-                                  (a.IsCompleted === true);
-              return isCompleted;
-            });
-            const latestAttempt = completedAttempts.length > 0 ? completedAttempts[completedAttempts.length - 1] : attemptsList[attemptsList.length - 1];
-            console.log(`[Quiz Exporter Debug] Selected target attempt from Valence list:`, latestAttempt);
-            const attemptId = latestAttempt.AttemptId || latestAttempt.Id;
-            if (attemptId) {
-              attemptUrl = this.toAbsoluteUrl(`/d2l/lms/quizzing/user/quiz_submissions_attempt.d2l?ou=${orgUnitId}&qi=${quizId}&ai=${attemptId}`);
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('Valence quiz attempts API failed, falling back to HTML scraping:', e);
-      }
 
-      // 5. Fallback to scraping valid LMS summary and submission pages using regex + DOM
-      if (!attemptUrl) {
-        console.log(`[Quiz Exporter Debug] Valence API was not used or did not resolve attemptUrl. Starting HTML scraping fallback for quiz ${quizId}...`);
-        const possibleUrls = [
-          `/d2l/lms/quizzing/user/quiz_submissions.d2l?qi=${quizId}&ou=${orgUnitId}`,
-          `/d2l/lms/quizzing/user/quiz_summary.d2l?qi=${quizId}&ou=${orgUnitId}`,
-          topicUrl
-        ];
+      // Scrape student LMS summary & submissions pages (supporting both /quizzing/ and /quizzes/)
+      const possibleUrls = [
+        `/d2l/lms/quizzing/user/quiz_submissions.d2l?qi=${quizId}&ou=${orgUnitId}`,
+        `/d2l/lms/quizzing/user/quiz_summary.d2l?qi=${quizId}&ou=${orgUnitId}`,
+        `/d2l/lms/quizzes/user/quiz_submissions.d2l?qi=${quizId}&ou=${orgUnitId}`,
+        `/d2l/lms/quizzes/user/quiz_summary.d2l?qi=${quizId}&ou=${orgUnitId}`,
+        topicUrl
+      ];
 
-        for (const pUrl of possibleUrls) {
-          if (!pUrl) continue;
-          try {
-            console.log(`[Quiz Exporter Debug] Fetching fallback URL: ${pUrl}`);
-            const resp = await fetch(this.toAbsoluteUrl(pUrl));
-            if (resp.ok) {
-              const htmlText = await resp.text();
-              const parser = new DOMParser();
-              const doc = parser.parseFromString(htmlText, 'text/html');
+      for (const pUrl of possibleUrls) {
+        if (!pUrl) continue;
+        try {
+          const resp = await fetch(this.toAbsoluteUrl(pUrl));
+          if (resp.ok) {
+            const htmlText = await resp.text();
+            const unescapedHtml = htmlText.replace(/\\\//g, '/');
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(unescapedHtml, 'text/html');
 
-              // 1. Try DOM search filtering out inprogress elements (very precise)
-              const attemptElements = Array.from(doc.querySelectorAll('a[href*="quiz_submissions_attempt"], a[href*="quiz_attempt_show_questions"], a[href*="submission_view"], [quiz-submission-url]'))
-                .filter(el => {
-                  const inProgress = el.hasAttribute('inprogress') || el.getAttribute('inprogress') !== null || el.closest('[inprogress]');
-                  return !inProgress;
-                });
-              console.log(`[Quiz Exporter Debug] Scraped completed attempt elements count: ${attemptElements.length}`);
-              if (attemptElements.length > 0) {
-                const lastEl = attemptElements[attemptElements.length - 1];
-                const href = lastEl.getAttribute('quiz-submission-url') || lastEl.getAttribute('href');
-                if (href) {
-                  attemptUrl = this.toAbsoluteUrl(href.replace(/&amp;/g, '&'));
-                  console.log(`[Quiz Exporter Debug] Found completed attemptUrl via DOM selector: ${attemptUrl}`);
-                  break;
-                }
-              }
+            // 1. DOM search for submission attempt links
+            const attemptElements = Array.from(doc.querySelectorAll('a[href*="quiz_submissions_attempt"], a[href*="quiz_attempt_show_questions"], a[href*="submission_view"], [quiz-submission-url]'))
+              .filter(el => {
+                const inProgress = el.hasAttribute('inprogress') || el.getAttribute('inprogress') !== null || el.closest('[inprogress]');
+                return !inProgress;
+              });
 
-              // 2. Regex fallback if DOM parsing yielded no results
-              const matches = htmlText.match(/(\/d2l\/lms\/quizzing\/user\/(?:quiz_submissions_attempt|quiz_attempt_show_questions|submission_view)\.d2l\?[^"'\s<>]+)/gi);
-              console.log(`[Quiz Exporter Debug] Scraped matches via Regex search:`, matches);
-              if (matches && matches.length > 0) {
-                let lastMatch = matches[matches.length - 1].replace(/&amp;/g, '&');
-                attemptUrl = this.toAbsoluteUrl(lastMatch);
-                console.log(`[Quiz Exporter Debug] Found completed attemptUrl via Regex fallback: ${attemptUrl}`);
+            if (attemptElements.length > 0) {
+              const lastEl = attemptElements[attemptElements.length - 1];
+              const href = lastEl.getAttribute('quiz-submission-url') || lastEl.getAttribute('href');
+              if (href) {
+                attemptUrl = this.toAbsoluteUrl(href.replace(/&amp;/g, '&'));
                 break;
               }
             }
-          } catch (e) {
-            console.warn(`Failed fetching quiz page ${pUrl}:`, e);
+
+            // 2. Regex fallback for attempt URLs or attempt IDs (ai=...)
+            const matches = unescapedHtml.match(/(\/d2l\/lms\/quizz(?:ing|es)\/user\/(?:quiz_submissions_attempt|quiz_attempt_show_questions|submission_view)\.d2l\?[^"'\s<>]+)/gi);
+            if (matches && matches.length > 0) {
+              const lastMatch = matches[matches.length - 1].replace(/&amp;/g, '&');
+              attemptUrl = this.toAbsoluteUrl(lastMatch);
+              break;
+            }
+
+            // 3. Check for attempt ID match
+            const aiMatch = unescapedHtml.match(/[?&]ai=(\d+)/i);
+            if (aiMatch) {
+              const aiVal = aiMatch[1];
+              attemptUrl = this.toAbsoluteUrl(`/d2l/lms/quizzing/user/quiz_submissions_attempt.d2l?ou=${orgUnitId}&qi=${quizId}&ai=${aiVal}&isInActivityDisplayDialog=1`);
+              break;
+            }
           }
+        } catch (e) {
+          console.warn(`Failed fetching quiz page ${pUrl}:`, e);
         }
       }
 
@@ -612,56 +727,283 @@ const D2LApi = {
       }
 
       const attemptHtml = await attemptResp.text();
-      const parser = new DOMParser();
-      const attemptDoc = parser.parseFromString(attemptHtml, 'text/html');
-      
-      // Extract questions
-      const questions = attemptDoc.querySelectorAll('.d2l-questions-question-container, .d2l-quiz-question, .d2l-qsh, [class*="question-container"], [id^="q_"]');
-      if (questions.length === 0) {
-        const fallback = attemptDoc.querySelector('form#attemptForm, #d2l_content, .d2l-page-main');
-        if (fallback) {
-          return this.processQuizHtml(fallback.innerHTML, attemptUrl, discoveredAttachments, downloadAssets);
-        }
-        return `<div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
-                  <strong>Notice:</strong> Attempt page found, but quiz questions container could not be parsed.
-                </div>`;
-      }
-      
-      let combinedHtml = '';
-      let index = 0;
-      questions.forEach((q) => {
-        let isNested = false;
-        let parent = q.parentElement;
-        while (parent) {
-          if (parent.classList && (
-            parent.classList.contains('d2l-questions-question-container') ||
-            parent.classList.contains('d2l-quiz-question') ||
-            parent.classList.contains('d2l-qsh')
-          )) {
-            isNested = true;
-            break;
-          }
-          parent = parent.parentElement;
-        }
-        if (!isNested) {
-          const qCleanHtml = this.processQuizHtml(q.innerHTML, attemptUrl, discoveredAttachments, downloadAssets);
-          combinedHtml += `<div class="offline-quiz-question" style="margin-bottom: 24px; padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background-color: var(--bg-card); box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                            <div style="font-weight: 600; color: var(--accent); margin-bottom: 12px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Question ${index + 1}</div>
-                            ${qCleanHtml}
-                           </div>`;
-          index++;
-        }
-      });
-      
-      return combinedHtml || `<div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
-                                <strong>Notice:</strong> No quiz questions could be extracted from attempt details.
-                              </div>`;
+      return this.parseQuizAttemptHtml(attemptHtml, attemptUrl, discoveredAttachments, downloadAssets);
     } catch (e) {
       console.error(`Failed to fetch quiz content for ${topicTitle}:`, e);
       return `<div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
                 <strong>Error:</strong> Failed to retrieve quiz questions and answers due to an exception: ${e.message}
               </div>`;
+    }
+  },
 
+  // Parse structured quiz questions, choices, points, score, and explanations from Brightspace attempt HTML
+  parseQuizAttemptHtml(attemptHtml, attemptUrl = 'https://learn.uopeople.edu/', discoveredAttachments = [], downloadAssets = true) {
+    if (!attemptHtml) return '';
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(attemptHtml, 'text/html');
+      const container = doc.body;
+
+      // 1. Unpack all <d2l-html-block> web components into standard readable DOM nodes
+      this.unpackD2LHtmlBlocks(container);
+
+      // 2. Extract Score Banner
+      let scoreHtml = '';
+      let attemptScoreText = '';
+      let overallGradeText = '';
+      let attemptDateText = '';
+      
+      const allRows = container.querySelectorAll('tr, .dco.status, [id*="attempt"]');
+      allRows.forEach(el => {
+        const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (txt.includes('Attempt Score') && !attemptScoreText) {
+          attemptScoreText = txt;
+        } else if (txt.includes('Overall Grade') && !overallGradeText) {
+          overallGradeText = txt;
+        } else if (txt.includes('Written ') && !attemptDateText) {
+          attemptDateText = txt;
+        }
+      });
+
+      if (attemptScoreText || overallGradeText) {
+        const cleanScore = this.formatQuizScoreText(attemptScoreText);
+        const cleanGrade = this.formatQuizScoreText(overallGradeText);
+        const cleanDate = this.formatQuizScoreText(attemptDateText);
+
+        scoreHtml = `
+          <div class="quiz-score-banner" style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; padding: 14px 18px; margin-bottom: 20px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.08)); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px;">
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              ${cleanScore ? `<div style="font-weight: 700; color: var(--text-main); font-size: 15px;">📊 <span>${this.escapeHtml(cleanScore)}</span></div>` : ''}
+              ${cleanGrade ? `<div style="font-size: 13px; color: var(--text-muted);">${this.escapeHtml(cleanGrade)}</div>` : ''}
+            </div>
+            ${cleanDate ? `<div style="font-size: 12px; color: var(--text-muted); background: rgba(0,0,0,0.04); padding: 4px 10px; border-radius: 20px;">📅 ${this.escapeHtml(cleanDate)}</div>` : ''}
+          </div>
+        `;
+      }
+
+      // 3. Locate Question Headers
+      let qHeaders = Array.from(container.querySelectorAll('.updated-submission-question-header, [class*="submission-question-header"], [class*="question-header"]'));
+      if (qHeaders.length === 0) {
+        const qAnchors = Array.from(container.querySelectorAll('a[id^="Q"], a[name^="Q"]'));
+        qHeaders = qAnchors.map(a => a.closest('.dco, div') || a.parentElement).filter(Boolean);
+      }
+
+      // 4. Extract Question Details
+      const questionsList = [];
+      const seenQNumbers = new Set();
+
+      for (let i = 0; i < qHeaders.length; i++) {
+        const qHdr = qHeaders[i];
+        const headerText = (qHdr.innerText || qHdr.textContent || '').replace(/\s+/g, ' ').trim();
+        
+        const qNumMatch = headerText.match(/Question\s+(\d+)/i);
+        const qNum = qNumMatch ? parseInt(qNumMatch[1], 10) : (questionsList.length + 1);
+
+        if (seenQNumbers.has(qNum)) continue;
+        seenQNumbers.add(qNum);
+
+        const ptsMatch = headerText.match(/(\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?\s*points?)/i);
+        const pointsText = ptsMatch ? ptsMatch[1] : '';
+
+        // Sibling body container
+        let bodyContainer = qHdr.nextElementSibling;
+        while (bodyContainer && bodyContainer.tagName === 'A') {
+          bodyContainer = bodyContainer.nextElementSibling;
+        }
+
+        let promptHtml = '';
+        const options = [];
+        let feedbackHtml = '';
+
+        if (bodyContainer) {
+          // Question prompt text
+          const promptEl = bodyContainer.querySelector('.d2l-htmlblock-untrusted, .d2l-unpacked-block, p') || bodyContainer.firstElementChild;
+          if (promptEl) {
+            promptHtml = promptEl.innerHTML.trim();
+          }
+
+          // Options table
+          const optTable = bodyContainer.querySelector('table.d_t, table');
+          if (optTable) {
+            const rows = optTable.querySelectorAll('tr');
+            rows.forEach(tr => {
+              const trHtml = tr.innerHTML.toLowerCase();
+              const trText = (tr.innerText || tr.textContent || '').trim();
+
+              const isCorrect = trHtml.includes('tier1:check') || 
+                                trHtml.includes('alt="correct response"') || 
+                                trHtml.includes('title="correct response"') || 
+                                trHtml.includes('alt="correct"') || 
+                                trHtml.includes('title="correct"') || 
+                                trHtml.includes('infcorrect') ||
+                                Boolean(tr.querySelector('d2l-icon[icon="tier1:check"], d2l-icon[icon*=":check"], [class*="answer-correct"]'));
+
+              const isSelected = (trHtml.includes('radiochecked.svg') || 
+                                  trHtml.includes('checkboxchecked.svg') || 
+                                  trHtml.includes('alt="selected"') ||
+                                  trHtml.includes('title="selected"')) &&
+                                 !trHtml.includes('radiounchecked.svg') &&
+                                 !trHtml.includes('alt="unselected"') &&
+                                 !trHtml.includes('title="unselected"');
+
+              const isIncorrect = trHtml.includes('tier1:close') ||
+                                  trHtml.includes('alt="incorrect response"') ||
+                                  trHtml.includes('title="incorrect response"') ||
+                                  Boolean(tr.querySelector('d2l-icon[icon="tier1:close"], [class*="answer-incorrect"]'));
+
+              // Option text container: prioritize unpacked block, untrusted block, d2l-html-block, or the .d_tw width=100% cell
+              const optTextEl = tr.querySelector('.d2l-unpacked-inline, .d2l-unpacked-block, .d2l-htmlblock-untrusted, d2l-html-block') ||
+                                tr.querySelector('.d_tw') ||
+                                tr.querySelector('td:last-child');
+              let optTextHtml = '';
+
+              if (optTextEl) {
+                if (optTextEl.tagName === 'D2L-HTML-BLOCK') {
+                  const htmlAttr = optTextEl.getAttribute('html');
+                  optTextHtml = htmlAttr ? this.unpackD2LHtmlBlocks(htmlAttr) : optTextEl.innerHTML.trim();
+                } else {
+                  optTextHtml = optTextEl.innerHTML.trim();
+                }
+              } else {
+                optTextHtml = trText;
+              }
+
+              // Strip any residual indicator image tags or controls wrappers from the choice text
+              if (optTextHtml.includes('<img') || optTextHtml.includes('<d2l-icon')) {
+                const tempDiv = (doc.createElement ? doc : document).createElement('div');
+                tempDiv.innerHTML = optTextHtml;
+                tempDiv.querySelectorAll('img, d2l-icon, .dco_c, .di_s, .d2l-qc-controls-container').forEach(el => el.remove());
+                const cleanedText = tempDiv.innerHTML.trim();
+                if (cleanedText) {
+                  optTextHtml = cleanedText;
+                }
+              }
+
+              if (optTextHtml) {
+                options.push({
+                  textHtml: optTextHtml,
+                  isCorrect: isCorrect,
+                  isSelected: isSelected,
+                  isIncorrect: isIncorrect
+                });
+              }
+            });
+          }
+
+          // Search subsequent siblings for feedback table or card
+          let currSibling = bodyContainer.nextElementSibling;
+          while (currSibling && !currSibling.classList.contains('updated-submission-question-header') && !currSibling.querySelector('.updated-submission-question-header')) {
+            const fbTextEl = currSibling.querySelector('.d2l-question-feedback-text, [id*="Feedback"], .d2l-htmlblock-untrusted, .d2l-unpacked-block');
+            if (fbTextEl) {
+              feedbackHtml = fbTextEl.innerHTML.trim();
+              break;
+            }
+            if (currSibling.tagName === 'TABLE' && currSibling.classList.contains('d_FG')) {
+              const fbCell = currSibling.querySelector('.dco_c, .d2l-unpacked-block, .fct_w');
+              if (fbCell) {
+                feedbackHtml = fbCell.innerHTML.trim();
+                break;
+              }
+            }
+            currSibling = currSibling.nextElementSibling;
+          }
+        }
+
+        if (!promptHtml && bodyContainer) {
+          promptHtml = bodyContainer.innerHTML.trim();
+        }
+
+        questionsList.push({
+          number: qNum,
+          points: pointsText,
+          promptHtml: promptHtml,
+          options: options,
+          feedbackHtml: feedbackHtml
+        });
+      }
+
+      // 5. Render Structured HTML Output
+      let questionsHtml = '';
+      if (questionsList.length > 0) {
+        questionsList.forEach((q) => {
+          let optionsHtml = '';
+          if (q.options && q.options.length > 0) {
+            optionsHtml = `
+              <div class="quiz-options-list" style="display: flex; flex-direction: column; gap: 8px; margin: 14px 0;">
+                ${q.options.map(opt => {
+                  let optStyle = 'display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-hover);';
+                  let badge = '';
+
+                  if (opt.isCorrect && opt.isSelected) {
+                    optStyle = 'display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: 6px; border: 1.5px solid #10b981; background: rgba(16, 185, 129, 0.08);';
+                    badge = '<span class="quiz-badge-correct" style="margin-left: auto; font-size: 12px; font-weight: 600; color: #10b981; white-space: nowrap;">✅ Correct &amp; Your Answer</span>';
+                  } else if (opt.isCorrect) {
+                    optStyle = 'display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: 6px; border: 1.5px solid #10b981; background: rgba(16, 185, 129, 0.05);';
+                    badge = '<span class="quiz-badge-correct" style="margin-left: auto; font-size: 12px; font-weight: 600; color: #10b981; white-space: nowrap;">✅ Correct Answer</span>';
+                  } else if (opt.isSelected) {
+                    optStyle = 'display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: 6px; border: 1.5px solid #ef4444; background: rgba(239, 68, 68, 0.05);';
+                    badge = '<span class="quiz-badge-selected" style="margin-left: auto; font-size: 12px; font-weight: 600; color: #ef4444; white-space: nowrap;">❌ Your Answer</span>';
+                  }
+
+                  return `
+                    <div class="quiz-option-item ${opt.isCorrect ? 'is-correct' : ''} ${opt.isSelected ? 'is-selected' : ''}" style="${optStyle}">
+                      <span style="font-size: 16px; line-height: 1;">${opt.isSelected ? '🔘' : '⚪'}</span>
+                      <div class="quiz-option-text" style="flex: 1; font-size: 14px; color: var(--text-main);">${opt.textHtml}</div>
+                      ${badge}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `;
+          }
+
+          let feedbackBlock = '';
+          if (q.feedbackHtml) {
+            feedbackBlock = `
+              <div class="quiz-feedback-card" style="margin-top: 14px; padding: 12px 16px; background: rgba(245, 158, 11, 0.08); border-left: 4px solid #f59e0b; border-radius: 4px;">
+                <div style="font-weight: 700; font-size: 13px; color: #d97706; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                  <span>💡</span> <span>Explanation &amp; Feedback</span>
+                </div>
+                <div style="font-size: 13.5px; color: var(--text-main); line-height: 1.5;">${q.feedbackHtml}</div>
+              </div>
+            `;
+          }
+
+          questionsHtml += `
+            <div class="offline-quiz-question" style="margin-bottom: 24px; padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background-color: var(--bg-card); box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+              <div class="quiz-question-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                <span style="font-weight: 700; color: var(--accent); font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Question ${q.number}</span>
+                ${q.points ? `<span class="quiz-points-badge" style="font-size: 12px; font-weight: 600; background: var(--bg-hover); color: var(--text-muted); padding: 2px 8px; border-radius: 12px; border: 1px solid var(--border-color);">${this.escapeHtml(q.points)}</span>` : ''}
+              </div>
+              <div class="quiz-prompt-text" style="font-size: 15px; font-weight: 500; color: var(--text-main); margin-bottom: 14px; line-height: 1.5;">${q.promptHtml}</div>
+              ${optionsHtml}
+              ${feedbackBlock}
+            </div>
+          `;
+        });
+      }
+
+      // If no questions parsed via structured headers, use fallback
+      if (!questionsHtml) {
+        const fallback = container.querySelector('form#d2l_form, form#attemptForm, #d_content_r_p, #d_content, .d2l-page-main');
+        if (fallback) {
+          questionsHtml = this.processQuizHtml(fallback.innerHTML, attemptUrl, discoveredAttachments, downloadAssets);
+        }
+      }
+
+      if (!questionsHtml) {
+        return `<div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
+                  <strong>Notice:</strong> Quiz questions container could not be parsed from attempt details.
+                </div>`;
+      }
+
+      const finalHtml = (scoreHtml + questionsHtml).trim();
+      return this.processHtmlContent(finalHtml, attemptUrl, discoveredAttachments, downloadAssets);
+    } catch (e) {
+      console.warn('Failed to parse quiz attempt HTML:', e);
+      return `<div class="quiz-notice" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 6px;">
+                <strong>Error:</strong> Failed to process quiz questions: ${e.message}
+              </div>`;
     }
   },
 
@@ -671,6 +1013,8 @@ const D2LApi = {
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlStr, 'text/html');
       const container = doc.body;
+
+      this.unpackD2LHtmlBlocks(container);
 
       // 1. Replace correctness and selection indicator images with emojis
       container.querySelectorAll('img').forEach(img => {
@@ -769,6 +1113,42 @@ const D2LApi = {
       console.warn('Failed to process Quiz HTML:', e);
       return htmlStr;
     }
+  },
+
+  // Format raw Brightspace quiz score text into clean human-readable labels
+  formatQuizScoreText(rawStr) {
+    if (!rawStr) return '';
+    const s = String(rawStr).replace(/\s+/g, ' ').trim();
+    const lower = s.toLowerCase();
+
+    if (lower.includes('attempt score')) {
+      const match = s.match(/attempt\s*score\s*:?\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?\s*%))?/i);
+      if (match) {
+        const earned = match[1];
+        const total = match[2];
+        const pct = match[3] ? match[3].replace(/\s+/g, '') : `${Math.round((parseFloat(earned) / parseFloat(total)) * 100)}%`;
+        return `Attempt Score: ${earned} / ${total} (${pct})`;
+      }
+      return s.replace(/^attempt\s*score/i, 'Attempt Score: ');
+    }
+
+    if (lower.includes('overall grade')) {
+      const match = s.match(/overall\s*grade(?:\s*\(([^)]+)\))?\s*:?\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?\s*%))?/i);
+      if (match) {
+        const sub = match[1] || 'Highest Attempt';
+        const earned = match[2];
+        const total = match[3];
+        const pct = match[4] ? match[4].replace(/\s+/g, '') : `${Math.round((parseFloat(earned) / parseFloat(total)) * 100)}%`;
+        return `Overall Grade (${sub}): ${earned} / ${total} (${pct})`;
+      }
+      return s.replace(/^overall\s*grade/i, 'Overall Grade: ');
+    }
+
+    if (lower.startsWith('written')) {
+      return s.replace(/([AP]M)(Attempt\s+\d+)/i, '$1 • $2').replace(/^Written\s*/i, 'Submitted: ');
+    }
+
+    return s;
   },
 
   // Clean a name for robust matching (e.g. written assignment unit 1 vs assignment activity unit 1)
@@ -942,11 +1322,24 @@ const D2LApi = {
       const doc = parser.parseFromString(htmlStr, 'text/html');
       const container = doc.body;
 
+      // 1. Unpack all <d2l-html-block> web components first
+      this.unpackD2LHtmlBlocks(container);
+
       // Process all links and attachments
+      const ouMatch = baseUrl.match(/(?:enforced\/|lessons\/|content\/|home\/)(\d+)/i);
+      const matchedOu = ouMatch ? ouMatch[1] : '';
+
       container.querySelectorAll('a[href]').forEach(a => {
-        const href = a.getAttribute('href');
+        let href = a.getAttribute('href');
         if (href) {
-          const absUrl = this.toAbsoluteUrl(href, baseUrl);
+          if (matchedOu && href.includes('{orgUnitId}')) {
+            href = href.replace(/\{orgUnitId\}/g, matchedOu);
+            a.setAttribute('href', href);
+          }
+          let absUrl = this.toAbsoluteUrl(href, baseUrl);
+          if (matchedOu && absUrl.includes('{orgUnitId}')) {
+            absUrl = absUrl.replace(/\{orgUnitId\}/g, matchedOu);
+          }
           if (this.isAssetUrl(href) || this.isAssetUrl(absUrl)) {
             let rawFileName = href.split('?')[0].split('#')[0].split('/').pop();
             if (!rawFileName || rawFileName === 'DirectFileTopicDownload') {
@@ -1160,6 +1553,8 @@ const D2LApi = {
             url: topicUrl,
             type: topicType,
             typeTitle: topic.TypeTitle || '',
+            toolItemId: topic.ToolItemId || null,
+            activityId: topic.ActivityId || null,
             contentHtml: ''
           };
 
@@ -1328,6 +1723,174 @@ const D2LApi = {
     }
 
     return units;
+  },
+
+  // Extract all topics from TOC data (recursively traversing modules and submodules)
+  extractAllTopicsFromToc(tocData) {
+    if (!tocData) return [];
+    const topics = [];
+    const seenIds = new Set();
+
+    const walk = (node) => {
+      if (!node) return;
+      if (Array.isArray(node)) {
+        for (const child of node) {
+          walk(child);
+        }
+        return;
+      }
+      if (Array.isArray(node.Topics)) {
+        for (const t of node.Topics) {
+          if (!t) continue;
+          const id = t.Identifier || t.TopicId || t.Id;
+          if (id !== undefined && id !== null) {
+            const strId = String(id);
+            if (!seenIds.has(strId)) {
+              seenIds.add(strId);
+              topics.push({
+                id: strId,
+                title: (t.Title || '').trim(),
+                type: t.TypeIdentifier || t.TopicType || '',
+                url: t.Url || '',
+                isCompleted: t.IsCompleted ?? t.Completed ?? null
+              });
+            }
+          }
+        }
+      }
+      if (Array.isArray(node.Modules)) {
+        for (const m of node.Modules) {
+          walk(m);
+        }
+      }
+      if (Array.isArray(node.SubModules)) {
+        for (const sm of node.SubModules) {
+          walk(sm);
+        }
+      }
+    };
+
+    walk(tocData);
+    return topics;
+  },
+
+  // Fetch current user details from Valence API
+  async getCurrentUser() {
+    try {
+      const resp = await fetch('/d2l/api/lp/1.47/users/whoami', { credentials: 'include' });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return {
+        userId: data.Identifier,
+        firstName: data.FirstName || '',
+        lastName: data.LastName || '',
+        uniqueName: data.UniqueName || ''
+      };
+    } catch (e) {
+      console.warn('[Course Exporter] Failed to get current user:', e);
+      return null;
+    }
+  },
+
+  // Query topic completion status from Brightspace Valence API
+  async getTopicCompletion(orgUnitId, topicId, userId) {
+    if (!orgUnitId || !topicId || !userId) return null;
+    try {
+      const resp = await fetch(`/d2l/api/le/1.54/${orgUnitId}/content/topics/${topicId}/completions/users/${userId}`, {
+        credentials: 'include'
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return {
+        topicId: String(topicId),
+        completionType: data.CompletionType,
+        isCompleted: !!data.CompletionDate,
+        completionDate: data.CompletionDate
+      };
+    } catch (e) {
+      return null;
+    }
+  },
+
+  // Mark a single Brightspace topic as completed by calling its native viewer endpoint
+  async markTopicCompleted(orgUnitId, topicId) {
+    if (!orgUnitId || !topicId) return false;
+    const url = `/d2l/le/content/${orgUnitId}/viewContent/${topicId}/View`;
+    try {
+      // Use redirect: 'manual' to prevent CORS failure on external link topics that 302 to third-party domains
+      const resp = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+        redirect: 'manual',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+      return resp.ok || resp.type === 'opaqueredirect' || resp.status === 200 || resp.status === 302 || resp.redirected;
+    } catch (e) {
+      console.warn(`[Course Exporter] Failed to mark topic ${topicId} as completed:`, e);
+      return false;
+    }
+  },
+
+  // Batch mark all topics as completed with controlled concurrency and progress callback
+  async markAllTopicsCompleted(orgUnitId, topics = null, onProgress = null) {
+    if (!orgUnitId) throw new Error('orgUnitId is required');
+
+    let topicList = topics;
+    if (!topicList) {
+      const tocData = await this.getTOC(orgUnitId);
+      if (!tocData) {
+        throw new Error(`Unable to fetch Table of Contents for course ${orgUnitId}`);
+      }
+      topicList = this.extractAllTopicsFromToc(tocData);
+    }
+
+    if (!topicList || topicList.length === 0) {
+      return { total: 0, completed: 0, failed: 0 };
+    }
+
+    let completed = 0;
+    let failed = 0;
+    const total = topicList.length;
+    const concurrency = 4;
+    const queue = [...topicList];
+
+    const worker = async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (!item || !item.id) continue;
+        const success = await this.markTopicCompleted(orgUnitId, item.id);
+        if (success) {
+          completed++;
+        } else {
+          failed++;
+        }
+        if (typeof onProgress === 'function') {
+          const current = completed + failed;
+          const percent = Math.min(100, Math.max(0, Math.round((current / Math.max(total, 1)) * 100)));
+          onProgress(current, total, percent, item);
+        }
+        // Small 40ms pause between requests to prevent server spikes
+        await new Promise(r => setTimeout(r, 40));
+      }
+    };
+
+    const workers = [];
+    const actualConcurrency = Math.min(concurrency, queue.length);
+    for (let i = 0; i < actualConcurrency; i++) {
+      workers.push(worker());
+    }
+
+    await Promise.all(workers);
+    return { total, completed, failed };
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.D2LApi = D2LApi;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.D2LApi = D2LApi;
+}
 

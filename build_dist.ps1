@@ -18,6 +18,9 @@ $coreFiles = @(
     "popup.html",
     "popup.js",
     "popup.css",
+    "options.html",
+    "options.js",
+    "options.css",
     "PRIVACY.md",
     "LICENSE",
     "README.md"

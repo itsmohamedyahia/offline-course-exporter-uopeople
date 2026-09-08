@@ -2,25 +2,50 @@
  * Content Script injected into Brightspace pages
  */
 (function () {
+  if (window.__UOP_COURSE_EXPORTER_LOADED__) {
+    return;
+  }
+  window.__UOP_COURSE_EXPORTER_LOADED__ = true;
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   function detectOrgUnitId() {
     const url = window.location.href;
+    const pathname = (window.location.pathname || '').replace(/\/+$/, '').toLowerCase();
 
+    // 1. Immediately exclude root landing portal, home, login, and system preference pages
+    if (/^\/d2l\/(?:home$|lp\/(?:homepage|preferences|profile|notifications|accountsettings)|login)/i.test(pathname)) {
+      return null;
+    }
+
+    // 2. Match standard Brightspace course URL paths with orgUnitId
     let match = url.match(/\/d2l\/home\/(\d+)/i);
-    if (match) return match[1];
+    if (match && match[1] !== '6606') return match[1];
 
     match = url.match(/\/d2l\/le\/lessons\/(\d+)/i);
-    if (match) return match[1];
+    if (match && match[1] !== '6606') return match[1];
 
     match = url.match(/\/d2l\/le\/content\/(\d+)/i);
-    if (match) return match[1];
+    if (match && match[1] !== '6606') return match[1];
 
+    // 3. Match ?ou= query parameter (e.g. quizzing, dropbox, discussions, calendar, grades)
+    // Exclude the root UoPeople institution orgUnitId (6606)
     match = url.match(/[?&]ou=(\d+)/i);
-    if (match) return match[1];
+    if (match && match[1] !== '6606') return match[1];
 
-    const navLink = document.querySelector('a[href*="/d2l/home/"]');
-    if (navLink) {
+    // 4. Safe DOM fallback: strictly search inside Brightspace course navigation header
+    const navLink = document.querySelector('.d2l-navigation-s-header a.d2l-navigation-s-link[href*="/d2l/home/"], a.d2l-navigation-s-link[href*="/d2l/home/"]');
+    if (navLink && navLink.href) {
       const m = navLink.href.match(/\/d2l\/home\/(\d+)/i);
-      if (m) return m[1];
+      if (m && m[1] !== '6606') return m[1];
     }
 
     return null;
@@ -37,15 +62,72 @@
         return true;
       }
 
-      D2LApi.getCourseInfo(orgUnitId).then(courseInfo => {
+      Promise.all([
+        D2LApi.getCourseInfo(orgUnitId),
+        new Promise(resolve => chrome.storage.local.get(['markedCourses', 'autoMarkCompleted'], resolve))
+      ]).then(([courseInfo, storageData]) => {
+        const markedCourses = (storageData && storageData.markedCourses) || {};
+        const isMarked = !!markedCourses[orgUnitId];
         sendResponse({
           detected: true,
           orgUnitId: orgUnitId,
-          courseInfo: courseInfo
+          courseInfo: courseInfo,
+          isMarked: isMarked,
+          markedInfo: markedCourses[orgUnitId] || null,
+          autoMarkCompleted: !!(storageData && storageData.autoMarkCompleted)
+        });
+      }).catch(err => {
+        sendResponse({
+          detected: true,
+          orgUnitId: orgUnitId,
+          courseInfo: { id: orgUnitId, name: `Course ${orgUnitId}` },
+          isMarked: false,
+          error: err.message
         });
       });
 
       return true;
+    }
+
+    if (request.action === 'MARK_COURSE_COMPLETED') {
+      const orgUnitId = request.orgUnitId || detectOrgUnitId();
+      if (!orgUnitId) {
+        sendResponse({ success: false, error: 'Could not identify course ID.' });
+        return true;
+      }
+
+      triggerCourseCompletion(orgUnitId, request.showToast !== false)
+        .then(result => sendResponse({ success: true, result }))
+        .catch(err => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+
+    if (request.action === 'COURSE_MARK_PROGRESS') {
+      const currentOu = detectOrgUnitId();
+      if (currentOu && String(request.orgUnitId) === String(currentOu)) {
+        D2LApi.getCourseInfo(currentOu).then(courseInfo => {
+          const cleanName = (courseInfo && courseInfo.name) || `Course ${currentOu}`;
+          showCompletionToast(cleanName, request.current, request.total, request.percent, request.status, false);
+        }).catch(() => {
+          showCompletionToast(`Course ${currentOu}`, request.current, request.total, request.percent, request.status, false);
+        });
+      }
+      return false;
+    }
+
+    if (request.action === 'COURSE_MARKED_COMPLETED') {
+      const currentOu = detectOrgUnitId();
+      if (currentOu && String(request.orgUnitId) === String(currentOu)) {
+        D2LApi.getCourseInfo(currentOu).then(courseInfo => {
+          const cleanName = (courseInfo && courseInfo.name) || `Course ${currentOu}`;
+          const res = request.result || {};
+          const count = res.verified !== undefined ? res.verified : (res.visited || 0);
+          showCompletionToast(cleanName, count, res.total || 0, 100, `Completed! Verified ${count} of ${res.total || 0} items on Brightspace.`, true);
+        }).catch(() => {
+          showCompletionToast(`Course ${currentOu}`, 0, 0, 100, 'Completed marking course!', true);
+        });
+      }
+      return false;
     }
 
     if (request.action === 'START_EXPORT') {
@@ -345,4 +427,280 @@
     }
   }
 
+  /* ==========================================================================
+     Auto-Complete & Course Topic Marking Engine
+     ========================================================================== */
+  const markingInProgress = new Set();
+  let toastDismissTimer = null;
+
+  function showCompletionToast(courseName, current, total, percent, statusText, isDone = false) {
+    let container = document.getElementById('uop-exporter-completion-toast');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'uop-exporter-completion-toast';
+      container.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 2147483647;
+        width: 330px;
+        background: #110d14;
+        border: 1px solid rgba(231, 79, 115, 0.35);
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 15px rgba(231, 79, 115, 0.15);
+        padding: 12px 14px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        color: #fcfbfa;
+        font-size: 12px;
+        line-height: 1.4;
+        box-sizing: border-box;
+        transition: opacity 0.3s ease, transform 0.3s ease;
+      `;
+      document.body.appendChild(container);
+    }
+
+    if (toastDismissTimer) {
+      clearTimeout(toastDismissTimer);
+      toastDismissTimer = null;
+    }
+
+    const titleIcon = isDone
+      ? `<span style="color: #10b981; font-size: 14px;">✅</span>`
+      : `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e74f73; box-shadow: 0 0 8px #e74f73; animation: uopPulse 1.5s infinite;"></span>`;
+
+    const progressColor = isDone
+      ? 'linear-gradient(90deg, #10b981, #34d399)'
+      : 'linear-gradient(90deg, #8b3c64, #e74f73)';
+
+    container.innerHTML = `
+      <style>
+        @keyframes uopPulse {
+          0% { opacity: 0.4; transform: scale(0.9); }
+          50% { opacity: 1; transform: scale(1.1); }
+          100% { opacity: 0.4; transform: scale(0.9); }
+        }
+      </style>
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+        <div style="display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: ${isDone ? '#34d399' : '#fbaec0'};">
+          ${titleIcon}
+          <span>Course Exporter</span>
+        </div>
+        <button id="uop-toast-close" style="background: none; border: none; color: #72647a; font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 4px; border-radius: 4px;">&times;</button>
+      </div>
+      <div style="font-weight: 600; font-size: 12px; margin-bottom: 4px; color: #fcfbfa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(courseName)}">
+        ${escapeHtml(courseName)}
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: #a99db0; margin-bottom: 5px;">
+        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;">${escapeHtml(statusText)}</span>
+        <span style="font-weight: 600; font-family: monospace; color: ${isDone ? '#34d399' : '#fbaec0'};">${percent}%</span>
+      </div>
+      <div style="height: 5px; background: rgba(255, 255, 255, 0.08); border-radius: 4px; overflow: hidden;">
+        <div style="height: 100%; width: ${percent}%; background: ${progressColor}; border-radius: 4px; transition: width 0.2s ease;"></div>
+      </div>
+    `;
+
+    const closeBtn = container.querySelector('#uop-toast-close');
+    if (closeBtn) {
+      closeBtn.onclick = () => hideCompletionToast(true);
+    }
+
+    if (isDone) {
+      toastDismissTimer = setTimeout(() => hideCompletionToast(), 4000);
+    }
+  }
+
+  function hideCompletionToast(immediate = false) {
+    const container = document.getElementById('uop-exporter-completion-toast');
+    if (!container) return;
+    if (immediate) {
+      container.remove();
+      return;
+    }
+    container.style.opacity = '0';
+    container.style.transform = 'translateY(10px)';
+    setTimeout(() => {
+      if (container && container.parentNode) container.parentNode.removeChild(container);
+    }, 350);
+  }
+
+  function emitMarkProgress(percent, status, orgUnitId) {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'COURSE_MARK_PROGRESS',
+        orgUnitId: String(orgUnitId),
+        percent: Math.min(Math.max(percent, 0), 100),
+        status: status
+      }, () => {
+        if (chrome.runtime.lastError) {}
+      });
+    } catch (e) {}
+  }
+
+  async function triggerCourseCompletion(orgUnitId, showToast = true) {
+    if (!orgUnitId) throw new Error('Course OrgUnit ID required');
+    const strOu = String(orgUnitId);
+    if (markingInProgress.has(strOu)) {
+      console.log(`[Course Exporter] Course ${strOu} completion already in progress.`);
+      return { inProgress: true };
+    }
+
+    markingInProgress.add(strOu);
+
+    try {
+      console.log(`[Course Exporter] Starting topic completion for course ${strOu}...`);
+      const courseInfo = await D2LApi.getCourseInfo(strOu);
+      const cleanName = (courseInfo && courseInfo.name) || `Course ${strOu}`;
+
+      if (showToast) {
+        showCompletionToast(cleanName, 0, 100, 5, 'Fetching course Table of Contents...');
+      }
+      emitMarkProgress(5, 'Fetching course Table of Contents...', strOu);
+
+      const tocData = await D2LApi.getTOC(strOu);
+      if (!tocData) {
+        throw new Error('Could not retrieve course Table of Contents from Brightspace.');
+      }
+
+      const topics = D2LApi.extractAllTopicsFromToc(tocData);
+      console.log(`[Course Exporter] Discovered ${topics.length} total topics for course ${strOu}`);
+
+      if (topics.length === 0) {
+        if (showToast) {
+          showCompletionToast(cleanName, 0, 0, 100, 'No topics found in course.', true);
+        }
+        emitMarkProgress(100, 'No topics found in course.', strOu);
+        return { total: 0, completed: 0, failed: 0 };
+      }
+
+      const currentUser = await D2LApi.getCurrentUser();
+
+      if (showToast) {
+        showCompletionToast(cleanName, 0, topics.length, 10, `Starting background viewer for ${topics.length} items...`);
+      }
+      emitMarkProgress(10, `Starting background viewer for ${topics.length} items...`, strOu);
+
+      // Delegate real navigation to background service worker tab runner
+      const startResult = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          action: 'START_COURSE_COMPLETION_RUNNER',
+          orgUnitId: strOu,
+          topics: topics,
+          userId: currentUser?.userId,
+          courseName: cleanName
+        }, (res) => resolve(res || { success: true }));
+      });
+
+      return startResult;
+
+    } catch (err) {
+      console.error(`[Course Exporter] Error completing course ${strOu}:`, err);
+      if (showToast) {
+        showCompletionToast(`Course ${strOu}`, 0, 0, 0, `Error: ${err.message}`, true);
+      }
+      throw err;
+    } finally {
+      markingInProgress.delete(strOu);
+    }
+  }
+
+  async function checkAndAutoMarkCourse() {
+    const orgUnitId = detectOrgUnitId();
+    if (!orgUnitId) return;
+
+    try {
+      const storage = await new Promise(r => chrome.storage.local.get(['autoMarkCompleted', 'markedCourses'], r));
+      // Feature is OFF by default
+      if (!storage || storage.autoMarkCompleted !== true) {
+        return;
+      }
+
+      const markedCourses = storage.markedCourses || {};
+      if (markedCourses[orgUnitId] || markedCourses[String(orgUnitId)]) {
+        const record = markedCourses[orgUnitId] || markedCourses[String(orgUnitId)];
+        console.log(`[Course Exporter] Course ${orgUnitId} already marked as completed (on ${record.markedAt}). Skipping re-marking.`);
+        return;
+      }
+
+      if (markingInProgress.has(String(orgUnitId))) {
+        return;
+      }
+
+      console.log(`[Course Exporter] Auto-mark is ENABLED and course ${orgUnitId} is not marked. Triggering completion...`);
+      await triggerCourseCompletion(orgUnitId, true);
+    } catch (e) {
+      console.warn('[Course Exporter] checkAndAutoMarkCourse error:', e);
+    }
+  }
+
+  let autoMarkDebounceTimer = null;
+  function debouncedAutoMark(delay = 800) {
+    if (autoMarkDebounceTimer) clearTimeout(autoMarkDebounceTimer);
+    autoMarkDebounceTimer = setTimeout(() => {
+      checkAndAutoMarkCourse();
+    }, delay);
+  }
+
+  // Initialize auto-mark check on document idle
+  debouncedAutoMark(1200);
+
+  // Synchronize when settings or flags are changed in options page or popup
+  if (chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local') {
+        if (changes.autoMarkCompleted && changes.autoMarkCompleted.newValue === true) {
+          debouncedAutoMark(300);
+        }
+        if (changes.markedCourses) {
+          const currentOu = detectOrgUnitId();
+          if (currentOu) {
+            const newMarked = changes.markedCourses.newValue || {};
+            if (!newMarked[currentOu] && !newMarked[String(currentOu)]) {
+              debouncedAutoMark(400);
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // Monitor URL changes for Single Page Application (SPA) navigation inside Brightspace
+  let lastObservedUrl = window.location.href;
+  const onUrlChange = () => {
+    if (window.location.href !== lastObservedUrl) {
+      lastObservedUrl = window.location.href;
+      debouncedAutoMark(800);
+    }
+  };
+
+  window.addEventListener('popstate', onUrlChange);
+  window.addEventListener('hashchange', onUrlChange);
+
+  // Observe title for client-side navigation in Brightspace
+  try {
+    const titleEl = document.querySelector('title');
+    if (titleEl) {
+      new MutationObserver(() => onUrlChange()).observe(titleEl, { childList: true, characterData: true, subtree: true });
+    }
+  } catch (e) {}
+
+  try {
+    const origPushState = history.pushState;
+    if (origPushState) {
+      history.pushState = function () {
+        origPushState.apply(this, arguments);
+        onUrlChange();
+      };
+    }
+    const origReplaceState = history.replaceState;
+    if (origReplaceState) {
+      history.replaceState = function () {
+        origReplaceState.apply(this, arguments);
+        onUrlChange();
+      };
+    }
+  } catch (e) {}
+
+  setInterval(onUrlChange, 2500);
+
 })();
+
