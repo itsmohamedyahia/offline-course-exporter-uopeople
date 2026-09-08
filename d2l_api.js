@@ -63,6 +63,116 @@ const D2LApi = {
     };
   },
 
+  // Discover all enrolled courses the student is attending
+  async getEnrolledCourses() {
+    const courses = [];
+    const seenIds = new Set();
+
+    const addCourse = (id, name, code = '') => {
+      if (!id) return;
+      const strId = String(id).trim();
+      if (!strId || strId === '6606' || seenIds.has(strId)) return;
+      seenIds.add(strId);
+      courses.push({
+        id: strId,
+        orgUnitId: strId,
+        name: this.cleanCourseName(name) || `Course ${strId}`,
+        code: (code || '').trim()
+      });
+    };
+
+    // 1. Query Valence LP myenrollments API
+    const lpVersions = ['1.30', '1.45', '1.26', '1.0'];
+    for (const ver of lpVersions) {
+      try {
+        const url = `/d2l/api/lp/${ver}/enrollments/myenrollments/?canAccess=true&orgUnitTypeId=3`;
+        const resp = await fetch(url, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          credentials: 'include'
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          const items = Array.isArray(data) ? data : (data.Items || []);
+          for (const item of items) {
+            const ou = item.OrgUnit || item;
+            if (ou && ou.Id) {
+              if (item.Access && item.Access.CanAccess === false) continue;
+              addCourse(ou.Id, ou.Name, ou.Code);
+            }
+          }
+          if (courses.length > 0) {
+            console.log(`[Course Exporter] Discovered ${courses.length} enrolled courses via Valence LP v${ver}`);
+            return courses;
+          }
+        }
+      } catch (e) {
+        console.warn(`Valence myenrollments API v${ver} attempt failed:`, e);
+      }
+    }
+
+    // 2. Secondary API attempt: general myenrollments without orgUnitTypeId query filter
+    try {
+      const resp = await fetch('/d2l/api/lp/1.30/enrollments/myenrollments/?canAccess=true', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'include'
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const items = Array.isArray(data) ? data : (data.Items || []);
+        for (const item of items) {
+          const ou = item.OrgUnit || item;
+          if (ou && ou.Id && (ou.Type?.Id === 3 || ou.Type?.Code === 'Course Offering' || !ou.Type)) {
+            if (item.Access && item.Access.CanAccess === false) continue;
+            addCourse(ou.Id, ou.Name, ou.Code);
+          }
+        }
+        if (courses.length > 0) {
+          return courses;
+        }
+      }
+    } catch (e) {}
+
+    // 3. DOM Fallback: inspect page for course cards, tiles, and navigation links
+    if (typeof document !== 'undefined') {
+      try {
+        const courseCards = document.querySelectorAll(
+          'd2l-enrollment-card, .d2l-course-tile, .d2l-card, [data-org-unit-id], a[href*="/d2l/home/"]'
+        );
+        courseCards.forEach(card => {
+          let ouId = (typeof card.getAttribute === 'function' ? (card.getAttribute('data-org-unit-id') || card.getAttribute('org-unit-id')) : null) || card['data-org-unit-id'];
+          let courseName = '';
+
+          if (!ouId && card.href) {
+            const m = card.href.match(/\/d2l\/home\/(\d+)/i);
+            if (m && m[1] !== '6606') ouId = m[1];
+          }
+
+          if (!ouId && typeof card.querySelector === 'function') {
+            const anchor = card.querySelector('a[href*="/d2l/home/"], a[href*="/d2l/le/content/"]');
+            if (anchor && anchor.href) {
+              const m = anchor.href.match(/\/d2l\/(?:home|le\/content)\/(\d+)/i);
+              if (m && m[1] !== '6606') ouId = m[1];
+            }
+          }
+
+          if (ouId && ouId !== '6606') {
+            const titleEl = typeof card.querySelector === 'function' ? card.querySelector('.d2l-card-title, h2, h3, [title], a') : null;
+            if (titleEl) {
+              courseName = (typeof titleEl.getAttribute === 'function' ? titleEl.getAttribute('title') : null) || titleEl.title || titleEl.innerText || titleEl.textContent || '';
+            } else if (card.innerText) {
+              courseName = card.innerText.split('\n')[0];
+            }
+            addCourse(ouId, courseName);
+          }
+        });
+      } catch (domErr) {
+        console.warn('DOM fallback scraping for enrolled courses encountered an error:', domErr);
+      }
+    }
+
+    return courses;
+  },
+
   async getTOC(orgUnitId) {
     const apiVersions = ['1.54', '1.43', '1.30', '1.0'];
     for (const ver of apiVersions) {

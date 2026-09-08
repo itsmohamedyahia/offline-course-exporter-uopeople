@@ -376,6 +376,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 9. Listen for live runtime progress & storage updates
   chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === 'BATCH_MARK_PROGRESS') {
+      activeProgressWrap.classList.remove('hidden');
+      updateActiveProgress(msg.percent, msg.status);
+    }
+    if (msg.action === 'BATCH_COURSES_COMPLETED') {
+      const count = msg.completedCourses || msg.totalCourses;
+      updateActiveProgress(100, `Done! Completed ${count} course${count > 1 ? 's' : ''} (${msg.totalTopics || 0} topics).`);
+      showToast(`All attending courses completed! (${count} courses marked)`);
+      loadStoredSettings();
+      checkActiveBrightspaceTab();
+      setTimeout(() => {
+        if (activeProgressWrap) activeProgressWrap.classList.add('hidden');
+      }, 3500);
+    }
     if (msg.action === 'COURSE_MARK_PROGRESS') {
       if (!activeCourseInfo || String(msg.orgUnitId) === String(activeCourseInfo.orgUnitId)) {
         activeProgressWrap.classList.remove('hidden');

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome • Offline Course Exporter for UoPeople</title>
+  <link rel="stylesheet" href="onboarding.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="icons/icon48.png">
+</head>
+<body>
+  <div class="onboarding-wrapper">
+    <div class="onboarding-card">
+
+      <!-- Brand Header -->
+      <div class="onboarding-brand">
+        <img src="icons/icon128.png" alt="Offline Course Exporter" class="brand-avatar">
+        <div class="brand-meta">
+          <span class="setup-badge">First-Time Setup</span>
+          <h1 class="brand-title">Offline Course Exporter</h1>
+          <p class="brand-subtitle">University of the People • Brightspace LMS Companion</p>
+        </div>
+      </div>
+
+      <!-- Main Setup Question Form -->
+      <div id="question-view" class="view-panel">
+        <div class="question-header">
+          <div class="question-pill">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span>One Quick Question</span>
+          </div>
+          <h2 class="question-title">Do you want your course pages to be automatically marked as completed?</h2>
+        </div>
+
+        <!-- Rationale Callout -->
+        <div class="rationale-box">
+          <div class="rationale-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+          </div>
+          <div class="rationale-content">
+            <h3 class="rationale-heading">Why auto-mark pages as completed?</h3>
+            <p class="rationale-text">
+              You will mostly be navigating the course <strong>offline</strong> after downloading the data. Auto-marking ensures all pages across all courses you are attending are marked as completed on Brightspace upfront, so your online progress tracking remains 100% complete without needing to manually click through every single web page.
+            </p>
+          </div>
+        </div>
+
+        <!-- Selection Choices -->
+        <div class="choices-container">
+          <button type="button" id="btn-choice-yes" class="choice-card choice-primary">
+            <div class="choice-icon-wrap check-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </div>
+            <div class="choice-text-wrap">
+              <div class="choice-title-row">
+                <span class="choice-title">Yes, Auto-Mark Course Pages</span>
+                <span class="choice-tag-rec">Recommended</span>
+              </div>
+              <p class="choice-desc">
+                When you open Brightspace on term start, all pages across all enrolled courses will automatically be verified and marked complete.
+              </p>
+            </div>
+          </button>
+
+          <button type="button" id="btn-choice-no" class="choice-card choice-secondary">
+            <div class="choice-icon-wrap cross-wrap">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </div>
+            <div class="choice-text-wrap">
+              <div class="choice-title-row">
+                <span class="choice-title">No, Keep Manual</span>
+              </div>
+              <p class="choice-desc">
+                Pages will only be marked when you manually click "Mark Completed" inside the extension popup or Settings page.
+              </p>
+            </div>
+          </button>
+        </div>
+
+        <p class="preference-footnote">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+          <span>You can change this anytime later in the extension popup or Settings.</span>
+        </p>
+      </div>
+
+      <!-- Completion Confirmation View -->
+      <div id="confirmed-view" class="view-panel hidden">
+        <div class="confirmed-icon-wrap">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+        </div>
+        <h2 class="confirmed-title">You're All Set!</h2>
+        <p id="confirmed-summary" class="confirmed-summary">
+          Your preference has been saved.
+        </p>
+
+        <div class="action-buttons-row">
+          <a href="https://learn.uopeople.edu" target="_blank" rel="noopener noreferrer" class="btn btn-primary" id="btn-open-portal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+            <span>Open Brightspace Portal</span>
+          </a>
+          <button type="button" class="btn btn-secondary" id="btn-close-onboarding">
+            <span>Close Window</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="onboarding.js"></script>
+</body>
+</html>

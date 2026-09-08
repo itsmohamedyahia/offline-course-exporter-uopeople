@@ -102,6 +102,20 @@
       return true;
     }
 
+    if (request.action === 'BATCH_MARK_PROGRESS') {
+      const title = `[Course ${request.courseIndex}/${request.totalCourses}] ${request.currentCourseName || 'Auto-Marking'}`;
+      showCompletionToast(title, request.current || 0, request.total || 100, request.percent, request.status, false);
+      return false;
+    }
+
+    if (request.action === 'BATCH_COURSES_COMPLETED') {
+      isBatchMarkingInProgress = false;
+      const count = request.completedCourses || request.totalCourses;
+      const summary = `Done! Completed ${count} attending course${count > 1 ? 's' : ''} (${request.totalTopics || 0} topics marked).`;
+      showCompletionToast('All Enrolled Courses Completed', count, request.totalCourses, 100, summary, true);
+      return false;
+    }
+
     if (request.action === 'COURSE_MARK_PROGRESS') {
       const currentOu = detectOrgUnitId();
       if (currentOu && String(request.orgUnitId) === String(currentOu)) {
@@ -603,32 +617,89 @@
     }
   }
 
-  async function checkAndAutoMarkCourse() {
-    const orgUnitId = detectOrgUnitId();
-    if (!orgUnitId) return;
+  let isBatchMarkingInProgress = false;
+
+  async function checkAndAutoMarkAllCourses() {
+    // Skip if on login or authentication screens
+    const pathname = (window.location.pathname || '').toLowerCase();
+    if (pathname.includes('/d2l/login') || pathname.includes('/d2l/lp/auth')) {
+      return;
+    }
 
     try {
       const storage = await new Promise(r => chrome.storage.local.get(['autoMarkCompleted', 'markedCourses'], r));
-      // Feature is OFF by default
+      // Feature is OFF by default unless enabled in onboarding or settings
       if (!storage || storage.autoMarkCompleted !== true) {
         return;
       }
 
+      if (isBatchMarkingInProgress) {
+        return;
+      }
+
       const markedCourses = storage.markedCourses || {};
-      if (markedCourses[orgUnitId] || markedCourses[String(orgUnitId)]) {
-        const record = markedCourses[orgUnitId] || markedCourses[String(orgUnitId)];
-        console.log(`[Course Exporter] Course ${orgUnitId} already marked as completed (on ${record.markedAt}). Skipping re-marking.`);
+
+      // 1. Discover all attending courses
+      let enrolled = await D2LApi.getEnrolledCourses().catch(err => {
+        console.warn('[Course Exporter] Failed to get enrolled courses:', err);
+        return [];
+      });
+
+      // 2. If no courses returned but currently inside a specific course, fallback to current course
+      const currentOu = detectOrgUnitId();
+      if (currentOu && !enrolled.some(c => String(c.id || c.orgUnitId) === String(currentOu))) {
+        const info = await D2LApi.getCourseInfo(currentOu).catch(() => ({ id: currentOu, name: `Course ${currentOu}` }));
+        enrolled.push({
+          id: String(currentOu),
+          orgUnitId: String(currentOu),
+          name: info.name || `Course ${currentOu}`
+        });
+      }
+
+      if (enrolled.length === 0) {
         return;
       }
 
-      if (markingInProgress.has(String(orgUnitId))) {
+      // 3. Filter down to unmarked courses
+      const unmarkedCourses = enrolled.filter(c => {
+        const idStr = String(c.id || c.orgUnitId);
+        return !markedCourses[idStr] && !markingInProgress.has(idStr);
+      });
+
+      if (unmarkedCourses.length === 0) {
+        console.log(`[Course Exporter] All ${enrolled.length} attending course(s) are already marked completed. Skipping.`);
         return;
       }
 
-      console.log(`[Course Exporter] Auto-mark is ENABLED and course ${orgUnitId} is not marked. Triggering completion...`);
-      await triggerCourseCompletion(orgUnitId, true);
+      console.log(`[Course Exporter] Auto-mark active: Discovered ${enrolled.length} enrolled courses (${unmarkedCourses.length} unmarked). Launching batch auto-mark...`);
+
+      isBatchMarkingInProgress = true;
+      unmarkedCourses.forEach(c => markingInProgress.add(String(c.id || c.orgUnitId)));
+
+      showCompletionToast(
+        'Auto-Marking Enrolled Courses',
+        0,
+        unmarkedCourses.length,
+        5,
+        `Found ${unmarkedCourses.length} attending course(s) to complete...`
+      );
+
+      chrome.runtime.sendMessage({
+        action: 'START_BATCH_COURSE_COMPLETION',
+        courses: unmarkedCourses.map(c => ({
+          orgUnitId: String(c.id || c.orgUnitId),
+          courseName: c.name
+        }))
+      }, (response) => {
+        if (chrome.runtime.lastError || (response && !response.success)) {
+          isBatchMarkingInProgress = false;
+          unmarkedCourses.forEach(c => markingInProgress.delete(String(c.id || c.orgUnitId)));
+        }
+      });
+
     } catch (e) {
-      console.warn('[Course Exporter] checkAndAutoMarkCourse error:', e);
+      console.warn('[Course Exporter] checkAndAutoMarkAllCourses error:', e);
+      isBatchMarkingInProgress = false;
     }
   }
 
@@ -636,7 +707,7 @@
   function debouncedAutoMark(delay = 800) {
     if (autoMarkDebounceTimer) clearTimeout(autoMarkDebounceTimer);
     autoMarkDebounceTimer = setTimeout(() => {
-      checkAndAutoMarkCourse();
+      checkAndAutoMarkAllCourses();
     }, delay);
   }
 
@@ -651,13 +722,7 @@
           debouncedAutoMark(300);
         }
         if (changes.markedCourses) {
-          const currentOu = detectOrgUnitId();
-          if (currentOu) {
-            const newMarked = changes.markedCourses.newValue || {};
-            if (!newMarked[currentOu] && !newMarked[String(currentOu)]) {
-              debouncedAutoMark(400);
-            }
-          }
+          debouncedAutoMark(400);
         }
       }
     });

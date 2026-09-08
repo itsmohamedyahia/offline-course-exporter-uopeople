@@ -147,10 +147,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     return str.trim();
   }
 
-  // Listen for live progress events from content script
+  // Listen for live progress events from content script and background runner
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === 'EXPORT_PROGRESS') {
       updateProgress(msg.percent, msg.status);
+    }
+    if (msg.action === 'BATCH_MARK_PROGRESS') {
+      progressSection.classList.remove('hidden');
+      updateProgress(msg.percent, msg.status);
+    }
+    if (msg.action === 'BATCH_COURSES_COMPLETED') {
+      const count = msg.completedCourses || msg.totalCourses;
+      updateProgress(100, `Done! Completed ${count} course${count > 1 ? 's' : ''} (${msg.totalTopics || 0} topics).`);
+      setTimeout(() => {
+        if (progressSection) progressSection.classList.add('hidden');
+      }, 3500);
     }
     if (msg.action === 'COURSE_MARK_PROGRESS' && activeOrgUnitId && String(msg.orgUnitId) === String(activeOrgUnitId)) {
       progressSection.classList.remove('hidden');

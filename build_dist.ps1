@@ -21,6 +21,9 @@ $coreFiles = @(
     "options.html",
     "options.js",
     "options.css",
+    "onboarding.html",
+    "onboarding.js",
+    "onboarding.css",
     "PRIVACY.md",
     "LICENSE",
     "README.md"
