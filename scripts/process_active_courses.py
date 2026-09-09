@@ -22,7 +22,6 @@ import subprocess
 from pathlib import Path
 
 DEFAULT_ACTIVE_FOLDER = ""
-DEFAULT_COMPLETED_FOLDER = r"S:\01_ACADEMIC_STUDY\UoPeople as Student\02_COMPLETED_COURSES"
 CONFIG_FILE = Path.home() / ".uopeople_course_exporter_config.json"
 SCRIPT_DIR = Path(__file__).resolve().parent
 PUSHPOPFLOW_API = os.environ.get("TASK_MANAGER_API", "http://127.0.0.1:4049")
@@ -102,7 +101,7 @@ def prompt_user_for_active_folder():
 
         selected = filedialog.askdirectory(
             title="Select UoPeople Active Courses Directory",
-            initialdir=r"S:\01_ACADEMIC_STUDY" if os.path.exists(r"S:\01_ACADEMIC_STUDY") else Path.home()
+            initialdir=str(Path.home())
         )
         root.destroy()
 
@@ -228,46 +227,36 @@ def find_course_zips(active_folder, target_zip_name=None):
 
 def find_assignment_template(active_folder=""):
     r"""
-    Find template assignment.docx in scripts/assets, active folder, or standard paths.
-    Base template: S:\01_ACADEMIC_STUDY\UoPeople as Student\02_COMPLETED_COURSES\CS2401-SWE\template assignment.docx,
-    bundled into scripts/assets/template_assignment.docx with automatic remote download fallback.
+    Find template assignment.docx bundled with local script, with automatic remote download fallback.
+    1. Primary: Bundled with script in scripts/assets/template_assignment.docx
+    2. Fallback: Automatic download from remote GitHub repository cached locally.
     """
-    candidates = [
-        os.path.join(SCRIPT_DIR, "assets", "template_assignment.docx"),
-        r"S:\01_ACADEMIC_STUDY\UoPeople as Student\02_COMPLETED_COURSES\CS2401-SWE\template assignment.docx",
-    ]
-    if active_folder:
-        candidates.extend([
-            os.path.join(active_folder, "template assignment.docx"),
-            os.path.join(os.path.dirname(active_folder), "04_TEMPLATES_AND_TOOLS", "Document_Templates", "template_apa_doc.docx"),
-            os.path.join(os.path.dirname(active_folder), "04_TEMPLATES_AND_TOOLS", "template assignment.docx"),
-            os.path.join(os.path.dirname(active_folder), "template assignment.docx"),
-        ])
-    for c in candidates:
-        if os.path.isfile(c):
-            return os.path.abspath(c)
+    # 1. Bundled with local script (primary source)
+    bundled_path = os.path.join(SCRIPT_DIR, "assets", "template_assignment.docx")
+    if os.path.isfile(bundled_path):
+        return os.path.abspath(bundled_path)
 
-    # Remote download fallback for other users or machines without local assets
-    cached_dest = os.path.join(SCRIPT_DIR, "assets", "template_assignment.docx")
+    # 2. Check local user cache if previously downloaded
     fallback_cache = os.path.join(str(Path.home()), ".uopeople_template_assignment.docx")
-    for dest in [cached_dest, fallback_cache]:
-        if os.path.isfile(dest):
-            return os.path.abspath(dest)
+    if os.path.isfile(fallback_cache):
+        return os.path.abspath(fallback_cache)
 
+    # 3. Remote download fallback
     remote_urls = [
         "https://raw.githubusercontent.com/itsmohamedyahia/offline-course-exporter-uopeople/main/scripts/assets/template_assignment.docx",
         "https://raw.githubusercontent.com/itsmohamedyahia/offline-course-exporter-uopeople/feat/auto-mark-all-courses-onboarding/scripts/assets/template_assignment.docx"
     ]
     for url in remote_urls:
-        try:
-            print(f"[Template] Local base template not found. Downloading from remote repository: {url} ...")
-            os.makedirs(os.path.dirname(cached_dest), exist_ok=True)
-            urllib.request.urlretrieve(url, cached_dest)
-            if os.path.isfile(cached_dest) and os.path.getsize(cached_dest) > 1000:
-                print(f"[Template] Successfully downloaded and cached base template ({os.path.getsize(cached_dest)} bytes).")
-                return os.path.abspath(cached_dest)
-        except Exception as e:
-            print(f"[Template Warning] Remote download from {url} failed: {e}")
+        for dest in [bundled_path, fallback_cache]:
+            try:
+                print(f"[Template] Local base template not found. Downloading from remote repository: {url} ...")
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                urllib.request.urlretrieve(url, dest)
+                if os.path.isfile(dest) and os.path.getsize(dest) > 1000:
+                    print(f"[Template] Successfully downloaded and cached base template ({os.path.getsize(dest)} bytes).")
+                    return os.path.abspath(dest)
+            except Exception as e:
+                print(f"[Template Warning] Remote download from {url} to {dest} failed: {e}")
 
     return None
 
@@ -866,9 +855,9 @@ def notify_pushpopflow_inbox(title, message, options=None, task_id=None):
     return False
 
 
-def archive_completed_courses(active_folder, completed_folder=DEFAULT_COMPLETED_FOLDER):
-    """Move completed course directories from active folder to completed folder."""
-    if not os.path.isdir(active_folder):
+def archive_completed_courses(active_folder, completed_folder=None):
+    """Move completed course directories from active folder to completed folder if configured."""
+    if not completed_folder or not os.path.isdir(active_folder):
         return
     os.makedirs(completed_folder, exist_ok=True)
     for item in os.listdir(active_folder):

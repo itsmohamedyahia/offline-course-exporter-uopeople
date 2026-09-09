@@ -73,8 +73,7 @@ def show_native_folder_picker():
         config = get_stored_config()
         initial_dir = config.get("active_courses_folder")
         if not initial_dir or not os.path.exists(initial_dir):
-            academic_dir = Path("S:/01_ACADEMIC_STUDY")
-            initial_dir = str(academic_dir) if academic_dir.exists() else str(Path.home())
+            initial_dir = str(Path.home())
 
         chosen = filedialog.askdirectory(
             parent=root,
