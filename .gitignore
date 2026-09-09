@@ -1,6 +1,7 @@
 # Project builds & temporary directories
-assets/
+/assets/
 changes/
+!scripts/assets/
 
 # Extension packages & Archives
 *.zip

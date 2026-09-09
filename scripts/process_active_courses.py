@@ -230,7 +230,7 @@ def find_assignment_template(active_folder=""):
     r"""
     Find template assignment.docx in scripts/assets, active folder, or standard paths.
     Base template: S:\01_ACADEMIC_STUDY\UoPeople as Student\02_COMPLETED_COURSES\CS2401-SWE\template assignment.docx,
-    bundled into scripts/assets/template_assignment.docx with local/server fallback.
+    bundled into scripts/assets/template_assignment.docx with automatic remote download fallback.
     """
     candidates = [
         os.path.join(SCRIPT_DIR, "assets", "template_assignment.docx"),
@@ -246,6 +246,29 @@ def find_assignment_template(active_folder=""):
     for c in candidates:
         if os.path.isfile(c):
             return os.path.abspath(c)
+
+    # Remote download fallback for other users or machines without local assets
+    cached_dest = os.path.join(SCRIPT_DIR, "assets", "template_assignment.docx")
+    fallback_cache = os.path.join(str(Path.home()), ".uopeople_template_assignment.docx")
+    for dest in [cached_dest, fallback_cache]:
+        if os.path.isfile(dest):
+            return os.path.abspath(dest)
+
+    remote_urls = [
+        "https://raw.githubusercontent.com/itsmohamedyahia/offline-course-exporter-uopeople/main/scripts/assets/template_assignment.docx",
+        "https://raw.githubusercontent.com/itsmohamedyahia/offline-course-exporter-uopeople/feat/auto-mark-all-courses-onboarding/scripts/assets/template_assignment.docx"
+    ]
+    for url in remote_urls:
+        try:
+            print(f"[Template] Local base template not found. Downloading from remote repository: {url} ...")
+            os.makedirs(os.path.dirname(cached_dest), exist_ok=True)
+            urllib.request.urlretrieve(url, cached_dest)
+            if os.path.isfile(cached_dest) and os.path.getsize(cached_dest) > 1000:
+                print(f"[Template] Successfully downloaded and cached base template ({os.path.getsize(cached_dest)} bytes).")
+                return os.path.abspath(cached_dest)
+        except Exception as e:
+            print(f"[Template Warning] Remote download from {url} failed: {e}")
+
     return None
 
 
