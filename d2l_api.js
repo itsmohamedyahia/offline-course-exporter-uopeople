@@ -2104,7 +2104,29 @@ const D2LApi = {
   async getCourseInstructor(orgUnitId) {
     if (!orgUnitId) return 'Instructor';
 
+    const cleanInstructorName = (raw) => {
+      if (!raw) return '';
+      let name = raw.trim();
+      // If "LastName, FirstName", reverse to "FirstName LastName"
+      if (name.includes(',') && !name.includes('\n')) {
+        const parts = name.split(',').map(s => s.trim());
+        if (parts.length >= 2 && parts[0] && parts[1]) {
+          name = `${parts[1]} ${parts[0]}`;
+        }
+      }
+      // Remove trailing roles, IDs, or brackets
+      name = name.replace(/\s*\(.*?\)\s*/g, ' ').trim();
+      name = name.replace(/\s*[-–—]\s*(?:Instructor|Faculty|Professor|Teacher|Primary).*$/i, '').trim();
+      name = name.replace(/^(?:Instructor|Faculty|Professor|Teacher):\s*/i, '').trim();
+      if (name.length >= 3 && name.length <= 60 && !/^(?:view|profile|email|message|instructor|faculty)$/i.test(name)) {
+        return name;
+      }
+      return '';
+    };
+
     const apiVersions = ['1.54', '1.43', '1.30', '1.0'];
+
+    // 1. Try Brightspace Classlist REST API
     for (const ver of apiVersions) {
       try {
         const resp = await fetch(`/d2l/api/le/${ver}/${orgUnitId}/classlist/`, {
@@ -2115,16 +2137,87 @@ const D2LApi = {
           const userList = Array.isArray(users) ? users : (users.Objects || []);
           const instructor = userList.find(u => {
             const role = String(u.RoleName || u.Role || '').toLowerCase();
-            return role.includes('instructor') || role.includes('faculty') || role.includes('teacher') || role.includes('professor');
+            return (role.includes('instructor') || role.includes('faculty') || role.includes('teacher') || role.includes('professor') || role.includes('leader')) &&
+                   !role.includes('instructional design');
           });
           if (instructor) {
-            const name = (instructor.DisplayName || `${instructor.FirstName || ''} ${instructor.LastName || ''}`).trim();
-            if (name) return name;
+            let candidate = '';
+            if (instructor.FirstName && instructor.LastName) {
+              candidate = `${instructor.FirstName} ${instructor.LastName}`.trim();
+            } else if (instructor.DisplayName) {
+              candidate = instructor.DisplayName.trim();
+            }
+            const cleaned = cleanInstructorName(candidate);
+            if (cleaned) return cleaned;
           }
         }
       } catch (e) {}
     }
 
+    // 2. Try Brightspace LMS Classlist HTML web page
+    try {
+      const clUrls = [
+        `/d2l/lms/classlist/classlist.d2l?ou=${orgUnitId}`,
+        `/d2l/lms/classlist/classlist.d2l?ou=${orgUnitId}&showRole=Instructor`
+      ];
+      for (const clUrl of clUrls) {
+        const clResp = await fetch(clUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        if (clResp.ok) {
+          const html = await clResp.text();
+          if (html && (html.includes('classlist') || html.includes('d2l-grid') || html.includes('d_g'))) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const rows = doc.querySelectorAll('tr, .d2l-grid-row, .d_gr');
+            for (const row of rows) {
+              const rText = row.textContent || '';
+              if (/instructor|faculty|professor|teacher/i.test(rText) && !/instructional\s*design/i.test(rText)) {
+                const nameLink = row.querySelector('a.d_gl, a[href*="profile"], a[href*="user"], a');
+                if (nameLink && nameLink.textContent) {
+                  const cleaned = cleanInstructorName(nameLink.textContent);
+                  if (cleaned) return cleaned;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 3. Fetch Course Homepage HTML and parse "Instructor Profile" / "Faculty" widget
+    try {
+      const homeResp = await fetch(`/d2l/home/${orgUnitId}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      if (homeResp.ok) {
+        const html = await homeResp.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        const widgets = doc.querySelectorAll('.d2l-widget, div[data-widget-id], div[role="region"], .d2l-box');
+        for (const w of widgets) {
+          const wText = w.textContent || '';
+          if (/instructor|faculty|meet your instructor|teacher/i.test(wText)) {
+            const m = wText.match(/(?:Instructor|Faculty|Professor|Teacher)(?:\s*Name)?\s*[:\-]\s*([A-Za-z\.\s'-]{3,50})/i);
+            if (m) {
+              const cleaned = cleanInstructorName(m[1]);
+              if (cleaned) return cleaned;
+            }
+            const m2 = wText.match(/(?:Dr\.|Prof\.|Professor)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/);
+            if (m2) {
+              const cleaned = cleanInstructorName(m2[0]);
+              if (cleaned) return cleaned;
+            }
+            const pLink = w.querySelector('a[href*="profile"], a[href*="email"], h3, h4');
+            if (pLink && pLink.textContent) {
+              const cleaned = cleanInstructorName(pLink.textContent);
+              if (cleaned) return cleaned;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 4. Try Announcements (News) REST API - match intro, author or signature
     for (const ver of apiVersions) {
       try {
         const resp = await fetch(`/d2l/api/le/${ver}/${orgUnitId}/news/`, {
@@ -2135,24 +2228,72 @@ const D2LApi = {
           const items = Array.isArray(news) ? news : (news.Objects || []);
           for (const item of items) {
             const titleOrBody = `${item.Title || ''} ${(item.Body && (item.Body.Text || item.Body.Html)) || ''}`;
+            const mIntro = titleOrBody.match(/(?:I am|I'm|My name is)\s+(?:your instructor,\s+)?(?:Dr\.|Prof\.|Professor)?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i);
+            if (mIntro) {
+              const cleaned = cleanInstructorName(mIntro[1]);
+              if (cleaned) return cleaned;
+            }
+            const mSig = titleOrBody.match(/(?:Sincerely|Best regards|Warm regards|Regards|Instructor|Professor),\s*[\r\n]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i);
+            if (mSig) {
+              const cleaned = cleanInstructorName(mSig[1]);
+              if (cleaned) return cleaned;
+            }
             const m = titleOrBody.match(/(?:Instructor|Professor|Prof\.|Dr\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/);
-            if (m) return m[0].trim();
+            if (m) {
+              const cleaned = cleanInstructorName(m[0]);
+              if (cleaned) return cleaned;
+            }
             if (item.CreatedByUserName && !item.CreatedByUserName.toLowerCase().includes('admin')) {
-              return item.CreatedByUserName;
+              const cleaned = cleanInstructorName(item.CreatedByUserName);
+              if (cleaned) return cleaned;
             }
           }
         }
       } catch (e) {}
     }
 
+    // 5. Try Announcements LMS HTML Page
+    try {
+      const newsResp = await fetch(`/d2l/lms/news/main.d2l?ou=${orgUnitId}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      if (newsResp.ok) {
+        const newsHtml = await newsResp.text();
+        const mIntro = newsHtml.match(/(?:I am|I'm|My name is)\s+(?:your instructor,\s+)?(?:Dr\.|Prof\.|Professor)?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i);
+        if (mIntro) {
+          const cleaned = cleanInstructorName(mIntro[1]);
+          if (cleaned) return cleaned;
+        }
+        const mSig = newsHtml.match(/(?:Sincerely|Best regards|Warm regards|Regards|Instructor|Professor),\s*[\r\n<br\s\/>]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i);
+        if (mSig) {
+          const cleaned = cleanInstructorName(mSig[1]);
+          if (cleaned) return cleaned;
+        }
+        const m = newsHtml.match(/(?:Instructor|Professor|Prof\.|Dr\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/);
+        if (m) {
+          const cleaned = cleanInstructorName(m[0]);
+          if (cleaned) return cleaned;
+        }
+      }
+    } catch (e) {}
+
+    // 6. Current page DOM inspection fallback
     if (typeof document !== 'undefined') {
-      const instructorElem = document.querySelector('.d2l-widget[data-widget-id*="instructor"], .instructor-name, .faculty-name');
-      if (instructorElem && instructorElem.textContent) {
-        const text = instructorElem.textContent.trim();
-        const m = text.match(/(?:Instructor|Faculty|Professor|Teacher)(?:\s*Name)?\s*:\s*([A-Za-z\.\s'-]{3,50})/i);
-        if (m) return m[1].trim();
-        const clean = text.replace(/^(?:Instructor|Faculty|Professor|Teacher):?\s*/i, '').trim();
-        if (clean && clean.length <= 40 && !clean.includes('\n')) return clean;
+      const allWidgets = document.querySelectorAll('.d2l-widget, .instructor-name, .faculty-name, div[role="region"]');
+      for (const elem of allWidgets) {
+        const text = elem.textContent || '';
+        if (/instructor|faculty|meet your instructor|teacher/i.test(text)) {
+          const m = text.match(/(?:Instructor|Faculty|Professor|Teacher)(?:\s*Name)?\s*[:\-]\s*([A-Za-z\.\s'-]{3,50})/i);
+          if (m) {
+            const cleaned = cleanInstructorName(m[1]);
+            if (cleaned) return cleaned;
+          }
+          const m2 = text.match(/(?:Dr\.|Prof\.|Professor)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/);
+          if (m2) {
+            const cleaned = cleanInstructorName(m2[0]);
+            if (cleaned) return cleaned;
+          }
+        }
       }
     }
 

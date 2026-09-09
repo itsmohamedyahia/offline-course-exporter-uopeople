@@ -59,6 +59,13 @@ KNOWN_COURSES = {
     'PHIL1402': 'Introduction to Philosophy',
 }
 
+KNOWN_INSTRUCTORS = {
+    'CS2401': 'Christor Pancho',
+    'PHIL1402': 'Dr. Daniel Lambert',
+    'ENVS1301': 'Dr. Daniel Ajose',
+    'ENGL1405': 'Dr. Ayesha Salma',
+}
+
 UPEOPLE_TERM_DATES = {
     1: "September 09, 2026",
     2: "September 16, 2026",
@@ -69,6 +76,54 @@ UPEOPLE_TERM_DATES = {
     7: "October 21, 2026",
     8: "October 28, 2026",
 }
+
+
+def load_instructors_mapping(active_folder="", cli_instructors=None):
+    """
+    Loads user-specified instructor name mappings from CLI and active folder.
+    """
+    user_mapping = {}
+
+    # 1. Config file
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+                custom_inst = cfg.get("instructors", {})
+                if isinstance(custom_inst, dict):
+                    for k, v in custom_inst.items():
+                        user_mapping[k.replace(' ', '').upper()] = v
+        except Exception:
+            pass
+
+    # 2. active_folder / instructors.json
+    if active_folder:
+        active_json = os.path.join(active_folder, "instructors.json")
+        if os.path.isfile(active_json):
+            try:
+                with open(active_json, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        for k, v in data.items():
+                            user_mapping[k.replace(' ', '').upper()] = v
+            except Exception:
+                pass
+
+    # 3. CLI instructors
+    if cli_instructors:
+        try:
+            if os.path.isfile(cli_instructors):
+                with open(cli_instructors, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                data = json.loads(cli_instructors)
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    user_mapping[k.replace(' ', '').upper()] = v
+        except Exception as e:
+            print(f"[Warning] Could not parse --instructors: {e}")
+
+    return user_mapping
 
 
 def get_configured_active_folder():
@@ -627,7 +682,7 @@ def get_course_unit_dirs(course_dir):
     return [(num, unit_map[num][1]) for num in sorted(unit_map.keys()) if 1 <= num <= 8]
 
 
-def process_course_folder(course_dir, active_folder):
+def process_course_folder(course_dir, active_folder, instructors_map=None):
     """
     Processes course directory:
     Finds units 1 through 8, creates coursework folder,
@@ -639,6 +694,9 @@ def process_course_folder(course_dir, active_folder):
         print(f"[Template] Found template assignment: {template_docx}")
     else:
         print(f"[Template Warning] No base template assignment.docx found.")
+
+    if instructors_map is None:
+        instructors_map = load_instructors_mapping(active_folder)
 
     # Load course_metadata.json if available
     metadata_path = os.path.join(course_dir, "course_metadata.json")
@@ -657,7 +715,7 @@ def process_course_folder(course_dir, active_folder):
     dept_prefix = m_code.group(1).upper() if m_code else "CS"
     code_num = m_code.group(2) if m_code else ""
     fallback_code = f"{dept_prefix} {code_num}".strip() if code_num else dept_prefix
-    clean_code_key = f"{dept_prefix}{code_num}"
+    clean_code_key = f"{dept_prefix}{code_num}".upper()
     fallback_dept = DEPARTMENT_MAP.get(dept_prefix, "Computer Science")
 
     extracted_title = re.sub(r'^[A-Z]{2,6}\s*\d{3,5}[-_:\s]*', '', folder_basename).replace('_', ' ').strip()
@@ -670,7 +728,25 @@ def process_course_folder(course_dir, active_folder):
     dept_name = metadata.get("department") or fallback_dept
     dept_line = metadata.get("departmentLine") or f"Department of {dept_name}, University of The People"
     course_line = metadata.get("courseLine") or f"{course_code}: {course_title}"
-    instructor_name = metadata.get("instructor") or "Instructor"
+
+    # Resolve instructor name with highest fidelity
+    clean_key_normalized = clean_code_key.replace(" ", "").upper()
+    custom_inst = (
+        instructors_map.get(clean_key_normalized) or
+        instructors_map.get(course_code.replace(" ", "").upper()) or
+        instructors_map.get(folder_basename.upper())
+    )
+
+    if custom_inst:
+        instructor_name = custom_inst
+    elif metadata.get("instructor") and metadata.get("instructor").strip().lower() not in ("instructor", "[instructor name]", "instructor name", ""):
+        instructor_name = metadata.get("instructor").strip()
+    elif clean_key_normalized in KNOWN_INSTRUCTORS:
+        instructor_name = KNOWN_INSTRUCTORS[clean_key_normalized]
+    else:
+        instructor_name = metadata.get("instructor") or "Instructor"
+
+    print(f"  [Course Details] Code: {course_code} | Title: {course_title} | Instructor: {instructor_name}")
 
     student_data = metadata.get("student") or {}
     student_initials = (student_data.get("initials") or "myk").lower().strip()
@@ -774,7 +850,22 @@ def process_course_folder(course_dir, active_folder):
             custom_filename = assign_info.get("templateFileName") or f"week{unit_num}_assignment_{student_initials}_template.docx"
             assign_file = os.path.join(assign_dir, custom_filename)
 
-            if template_docx and not os.path.exists(assign_file):
+            needs_populate = not os.path.exists(assign_file)
+            # If template exists but has generic "Instructor" on line P5 and we now know the real instructor, re-populate
+            if os.path.exists(assign_file) and instructor_name != "Instructor":
+                if not is_user_modified_docx(assign_file, template_docx):
+                    try:
+                        import docx
+                        existing_doc = docx.Document(assign_file)
+                        if len(existing_doc.paragraphs) > 5:
+                            p5_text = existing_doc.paragraphs[5].text.strip()
+                            if p5_text in ("Instructor", "[Instructor Name]", "Instructor Name", ""):
+                                needs_populate = True
+                                print(f"    [Update] Updating instructor from '{p5_text}' to '{instructor_name}' in {custom_filename}")
+                    except Exception:
+                        pass
+
+            if template_docx and needs_populate:
                 try:
                     success = populate_assignment_template(
                         base_template_path=template_docx,
@@ -786,7 +877,7 @@ def process_course_folder(course_dir, active_folder):
                         due_date=assignment_due_date
                     )
                     if success:
-                        print(f"    [Template] Populated {custom_filename} (Due: {assignment_due_date})")
+                        print(f"    [Template] Populated {custom_filename} (Instructor: {instructor_name}, Due: {assignment_due_date})")
                     else:
                         print(f"    [Warning] Failed to populate {custom_filename}")
                 except Exception as e:
@@ -823,7 +914,7 @@ def process_course_folder(course_dir, active_folder):
     return True
 
 
-def unzip_and_process_course(zip_path, active_folder):
+def unzip_and_process_course(zip_path, active_folder, instructors_map=None):
     """Unzips course package into active folder and organizes coursework."""
     zip_stem = Path(zip_path).stem
     clean_name = clean_course_folder_name(zip_stem, active_folder)
@@ -857,7 +948,7 @@ def unzip_and_process_course(zip_path, active_folder):
         raise e
 
     # Organize coursework
-    success = process_course_folder(dest_dir, active_folder)
+    success = process_course_folder(dest_dir, active_folder, instructors_map=instructors_map)
 
     # Delete zip on verified success
     if success:
@@ -981,6 +1072,7 @@ def main():
     parser.add_argument("--course-dir", help="Process an already extracted course directory directly")
     parser.add_argument("--reprocess", action="store_true", help="Reprocess all existing course folders in active directory")
     parser.add_argument("--archive-completed", action="store_true", help="Archive completed courses to 02_COMPLETED_COURSES")
+    parser.add_argument("--instructors", help="JSON string or file path mapping course codes to instructor names")
     args = parser.parse_args()
 
     # Determine active folder
@@ -1005,11 +1097,13 @@ def main():
         archive_completed_courses(active_folder)
         return
 
+    instructors_map = load_instructors_mapping(active_folder, cli_instructors=args.instructors)
+
     # Process specific directory if requested
     if args.course_dir:
         target = os.path.abspath(args.course_dir)
         if os.path.isdir(target):
-            process_course_folder(target, active_folder)
+            process_course_folder(target, active_folder, instructors_map=instructors_map)
             return
 
     # If --reprocess flag given or no zips found, normalize all existing courses in active folder
@@ -1020,7 +1114,7 @@ def main():
             if os.path.isdir(full_p) and not item.startswith('.'):
                 unit_dirs = get_course_unit_dirs(full_p)
                 if unit_dirs:
-                    process_course_folder(full_p, active_folder)
+                    process_course_folder(full_p, active_folder, instructors_map=instructors_map)
         return
 
     # Find ZIP archives
@@ -1034,7 +1128,7 @@ def main():
                 unit_dirs = get_course_unit_dirs(full_p)
                 if unit_dirs:
                     print(f"[Normalizing Coursework] {item}")
-                    process_course_folder(full_p, active_folder)
+                    process_course_folder(full_p, active_folder, instructors_map=instructors_map)
         return
 
     print(f"[Discovered] Found {len(zips)} course package(s) to process:")
@@ -1043,7 +1137,7 @@ def main():
 
     for z in zips:
         try:
-            unzip_and_process_course(z, active_folder)
+            unzip_and_process_course(z, active_folder, instructors_map=instructors_map)
         except Exception as e:
             err_str = str(e)
             print(f"[Error] Processing failed for {z}: {err_str}")
