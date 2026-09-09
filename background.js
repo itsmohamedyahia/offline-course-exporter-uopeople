@@ -120,8 +120,8 @@ async function handleZipDownload(payload, sendResponse) {
       } catch (e) {}
 
       chrome.storage.local.get(['activeCoursesFolder'], (st) => {
-        const activeFolder = st?.activeCoursesFolder || 'S:\\01_ACADEMIC_STUDY\\UoPeople as Student\\01_ACTIVE_COURSES';
-        fetch('http://127.0.0.1:4049/process-courses', {
+        const activeFolder = st?.activeCoursesFolder || '';
+        fetch('http://127.0.0.1:4048/process-courses', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

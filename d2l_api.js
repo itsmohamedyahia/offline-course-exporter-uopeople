@@ -1994,6 +1994,242 @@ const D2LApi = {
 
     await Promise.all(workers);
     return { total, completed, failed };
+  },
+
+  DEPARTMENT_MAP: {
+    'CS': 'Computer Science',
+    'MATH': 'Mathematics',
+    'PHIL': 'Philosophy',
+    'HIST': 'History',
+    'PSYC': 'Psychology',
+    'SOC': 'Sociology',
+    'BUS': 'Business Administration',
+    'ECON': 'Economics',
+    'BIOL': 'Biology',
+    'CHEM': 'Chemistry',
+    'PHYS': 'Physics',
+    'ENGL': 'English',
+    'AHIST': 'Art History',
+    'ARTH': 'Art History',
+    'HS': 'Health Science',
+    'POLS': 'Political Science',
+    'UNIV': 'General Education',
+    'ED': 'Education',
+    'EDUC': 'Education'
+  },
+
+  getDepartmentName(courseCode = '', courseName = '') {
+    const combined = `${courseCode} ${courseName}`.trim();
+    const match = combined.match(/\b([A-Z]{2,6})\s*\d{3,5}\b/i);
+    const prefix = match ? match[1].toUpperCase() : '';
+    if (prefix && this.DEPARTMENT_MAP[prefix]) {
+      return this.DEPARTMENT_MAP[prefix];
+    }
+    if (/computer|software|programming|data structures|algorithms|operating systems|database/i.test(combined)) return 'Computer Science';
+    if (/math|calculus|algebra|statistics/i.test(combined)) return 'Mathematics';
+    if (/business|management|marketing|accounting|finance/i.test(combined)) return 'Business Administration';
+    if (/philosophy|ethics/i.test(combined)) return 'Philosophy';
+    if (/health|biology|anatomy/i.test(combined)) return 'Health Science';
+    if (/psychology/i.test(combined)) return 'Psychology';
+    if (/history|civilization/i.test(combined)) return 'History';
+    if (/english|literature|writing/i.test(combined)) return 'English';
+    return prefix || 'Computer Science';
+  },
+
+  parseCourseCodeAndTitle(rawName = '', rawCode = '') {
+    const cleaned = this.cleanCourseName(rawName) || rawCode || 'Course';
+    const m = cleaned.match(/^([A-Z]{2,6}\s*\d{3,5})(?:-\d+)?(?:\s*[:\-–—]\s*|\s+)(.*)$/i);
+    if (m) {
+      const code = m[1].trim().replace(/\s+/, ' ');
+      let title = m[2].trim().replace(/^[-_–—:\s]+/, '').trim();
+      title = title.replace(/\s*-\s*(?:AY\d{4}-T\d|Term\s*\d|20\d\d).*$/i, '').trim();
+      return { code, title: title || cleaned };
+    }
+    const codeMatch = cleaned.match(/\b([A-Z]{2,6}\s*\d{3,5})\b/i);
+    const code = codeMatch ? codeMatch[1].trim().replace(/\s+/, ' ') : (rawCode || '');
+    return { code: code || cleaned, title: cleaned };
+  },
+
+  async whoAmI() {
+    const apiVersions = ['1.47', '1.43', '1.30', '1.0'];
+    for (const ver of apiVersions) {
+      try {
+        const resp = await fetch(`/d2l/api/lp/${ver}/users/whoami`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (resp.ok) {
+          return await resp.json();
+        }
+      } catch (e) {}
+    }
+    return null;
+  },
+
+  async getStudentProfile() {
+    let fullName = '';
+    let initials = '';
+
+    try {
+      const user = await this.whoAmI();
+      if (user) {
+        // Brightspace Valence WhoAmIUser response object
+        fullName = (user.UniqueDisplayName || `${user.FirstName || ''} ${user.LastName || ''}`).trim();
+      }
+    } catch (e) {}
+
+    if (!fullName && typeof document !== 'undefined') {
+      const profileElem = document.querySelector('.d2l-navigation-s-personal-menu-wrapper, .d2l-navigation-s-header-menu-text, .vui-dropdown-menu-item, [aria-label*="Profile"], [aria-label*="Account"]');
+      if (profileElem && profileElem.textContent) {
+        fullName = profileElem.textContent.trim();
+      }
+    }
+
+    if (fullName) {
+      const parts = fullName.split(/\s+/).map(p => p.replace(/[^a-zA-Z]/g, '')).filter(Boolean);
+      if (parts.length > 0) {
+        initials = parts.map(p => p[0].toLowerCase()).join('');
+      }
+    }
+
+    if (!initials) {
+      initials = 'myk';
+    }
+
+    return {
+      fullName: fullName || 'Mohamed Yahia Khidr',
+      initials: initials
+    };
+  },
+
+  async getCourseInstructor(orgUnitId) {
+    if (!orgUnitId) return 'Instructor';
+
+    const apiVersions = ['1.54', '1.43', '1.30', '1.0'];
+    for (const ver of apiVersions) {
+      try {
+        const resp = await fetch(`/d2l/api/le/${ver}/${orgUnitId}/classlist/`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (resp.ok) {
+          const users = await resp.json();
+          const userList = Array.isArray(users) ? users : (users.Objects || []);
+          const instructor = userList.find(u => {
+            const role = String(u.RoleName || u.Role || '').toLowerCase();
+            return role.includes('instructor') || role.includes('faculty') || role.includes('teacher') || role.includes('professor');
+          });
+          if (instructor) {
+            const name = (instructor.DisplayName || `${instructor.FirstName || ''} ${instructor.LastName || ''}`).trim();
+            if (name) return name;
+          }
+        }
+      } catch (e) {}
+    }
+
+    for (const ver of apiVersions) {
+      try {
+        const resp = await fetch(`/d2l/api/le/${ver}/${orgUnitId}/news/`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (resp.ok) {
+          const news = await resp.json();
+          const items = Array.isArray(news) ? news : (news.Objects || []);
+          for (const item of items) {
+            const titleOrBody = `${item.Title || ''} ${(item.Body && (item.Body.Text || item.Body.Html)) || ''}`;
+            const m = titleOrBody.match(/(?:Instructor|Professor|Prof\.|Dr\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/);
+            if (m) return m[0].trim();
+            if (item.CreatedByUserName && !item.CreatedByUserName.toLowerCase().includes('admin')) {
+              return item.CreatedByUserName;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (typeof document !== 'undefined') {
+      const instructorElem = document.querySelector('.d2l-widget[data-widget-id*="instructor"], .instructor-name, .faculty-name');
+      if (instructorElem && instructorElem.textContent) {
+        const text = instructorElem.textContent.trim();
+        const m = text.match(/(?:Instructor|Faculty|Professor|Teacher)(?:\s*Name)?\s*:\s*([A-Za-z\.\s'-]{3,50})/i);
+        if (m) return m[1].trim();
+        const clean = text.replace(/^(?:Instructor|Faculty|Professor|Teacher):?\s*/i, '').trim();
+        if (clean && clean.length <= 40 && !clean.includes('\n')) return clean;
+      }
+    }
+
+    return 'Instructor';
+  },
+
+  formatDueDate(isoString) {
+    if (!isoString) return '';
+    try {
+      const d = new Date(isoString);
+      if (!isNaN(d.getTime())) {
+        try {
+          return d.toLocaleDateString('en-US', {
+            timeZone: 'America/New_York',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+        } catch (tzErr) {
+          return d.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+        }
+      }
+    } catch (e) {}
+    return '';
+  },
+
+  buildCourseMetadata(courseInfo, dropboxFolders = [], studentProfile = null, instructorName = 'Instructor') {
+    const rawName = courseInfo?.name || '';
+    const rawCode = courseInfo?.code || '';
+    const { code, title } = this.parseCourseCodeAndTitle(rawName, rawCode);
+    const department = this.getDepartmentName(code, title);
+    const student = studentProfile || { fullName: 'Mohamed Yahia Khidr', initials: 'myk' };
+    const initials = student.initials || 'myk';
+
+    const assignments = {};
+    for (let u = 1; u <= 8; u++) {
+      let matchedFolder = null;
+      if (Array.isArray(dropboxFolders)) {
+        const unitRegex = new RegExp(`(?:unit|week)\\s*0?${u}(?!\\d)`, 'i');
+        matchedFolder = dropboxFolders.find(f => {
+          const fName = String(f.Name || '').toLowerCase();
+          return unitRegex.test(fName);
+        });
+      }
+
+      let formattedDate = '';
+      let rawDate = null;
+      if (matchedFolder && matchedFolder.DueDate) {
+        rawDate = matchedFolder.DueDate;
+        formattedDate = this.formatDueDate(rawDate);
+      }
+
+      assignments[String(u)] = {
+        unit: u,
+        title: `Unit ${u} Written Assignment`,
+        dueDate: formattedDate,
+        rawDueDate: rawDate,
+        templateFileName: `week${u}_assignment_${initials}_template.docx`
+      };
+    }
+
+    return {
+      courseId: String(courseInfo?.id || ''),
+      courseCode: code,
+      courseName: title,
+      department: department,
+      departmentLine: `Department of ${department}, University of The People`,
+      courseLine: `${code}: ${title}`,
+      instructor: instructorName || 'Instructor',
+      student: student,
+      assignments: assignments,
+      exportedAt: new Date().toISOString()
+    };
   }
 };
 

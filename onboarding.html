@@ -69,8 +69,40 @@
             </div>
           </div>
           <div class="folder-input-row">
-            <input type="text" id="onboarding-active-folder" class="onboarding-input" value="S:\01_ACADEMIC_STUDY\UoPeople as Student\01_ACTIVE_COURSES" placeholder="S:\01_ACADEMIC_STUDY\UoPeople as Student\01_ACTIVE_COURSES">
-            <button type="button" class="btn-reset-input" id="btn-onboarding-reset-folder" title="Reset to default directory">Reset</button>
+            <input type="text" id="onboarding-active-folder" class="onboarding-input" value="" placeholder="Paste directory path or click Browse...">
+            <button type="button" class="btn-browse" id="btn-onboarding-browse-folder" title="Open native desktop folder picker">Browse...</button>
+            <button type="button" class="btn-reset-input" id="btn-onboarding-clear-folder" title="Clear directory path">Clear</button>
+          </div>
+        </div>
+
+        <!-- Auto-Download Setup Card -->
+        <div class="folder-setup-card">
+          <div class="folder-setup-header" style="justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div class="folder-icon-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+              </div>
+              <div class="folder-setup-info">
+                <strong>Auto-Download Course Packages on Term Start</strong>
+                <span>Download combined packages (HTML website + Markdown notes) automatically on day one.</span>
+              </div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="onboarding-auto-download" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="rationale-box mini-rationale">
+            <div class="rationale-content">
+              <h4 class="rationale-heading">Why auto-download course packages?</h4>
+              <p class="rationale-text">
+                Immediate full offline access to all course materials without navigating each course individually. All reading assignments, syllabi, overviews, and coursework folders are downloaded and unzipped on your computer on day one.
+              </p>
+            </div>
           </div>
         </div>
 

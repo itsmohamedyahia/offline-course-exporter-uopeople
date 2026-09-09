@@ -21,15 +21,38 @@ import zipfile
 import subprocess
 from pathlib import Path
 
-DEFAULT_ACTIVE_FOLDER = r"S:\01_ACADEMIC_STUDY\UoPeople as Student\01_ACTIVE_COURSES"
+DEFAULT_ACTIVE_FOLDER = ""
 DEFAULT_COMPLETED_FOLDER = r"S:\01_ACADEMIC_STUDY\UoPeople as Student\02_COMPLETED_COURSES"
 CONFIG_FILE = Path.home() / ".uopeople_course_exporter_config.json"
+SCRIPT_DIR = Path(__file__).resolve().parent
 PUSHPOPFLOW_API = os.environ.get("TASK_MANAGER_API", "http://127.0.0.1:4049")
 PUSHPOPFLOW_KEY = os.environ.get("TASK_MANAGER_API_KEY", "a74516de-369e-4405-bac9-3d78a069e7d9")
 
+DEPARTMENT_MAP = {
+    'CS': 'Computer Science',
+    'MATH': 'Mathematics',
+    'PHIL': 'Philosophy',
+    'HIST': 'History',
+    'PSYC': 'Psychology',
+    'SOC': 'Sociology',
+    'BUS': 'Business Administration',
+    'ECON': 'Economics',
+    'BIOL': 'Biology',
+    'CHEM': 'Chemistry',
+    'PHYS': 'Physics',
+    'ENGL': 'English',
+    'AHIST': 'Art History',
+    'ARTH': 'Art History',
+    'HS': 'Health Science',
+    'POLS': 'Political Science',
+    'UNIV': 'General Education',
+    'ED': 'Education',
+    'EDUC': 'Education',
+}
+
 
 def get_configured_active_folder():
-    """Retrieve active courses folder from config file or return default."""
+    """Retrieve active courses folder from config file or return empty if unset."""
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -39,7 +62,7 @@ def get_configured_active_folder():
                     return os.path.abspath(folder)
         except Exception as e:
             print(f"[Warning] Could not read config file: {e}")
-    return os.path.abspath(DEFAULT_ACTIVE_FOLDER)
+    return ""
 
 
 def save_configured_active_folder(folder_path):
@@ -72,9 +95,9 @@ def prompt_user_for_active_folder():
         root.attributes('-topmost', True)
 
         messagebox.showwarning(
-            "Active Courses Folder Not Found",
-            f"The active courses directory could not be located at:\n{DEFAULT_ACTIVE_FOLDER}\n\n"
-            "Please select the active courses directory on your disk."
+            "Active Courses Folder Not Configured",
+            "The active courses directory has not been configured.\n\n"
+            "Please select your active courses directory on your disk."
         )
 
         selected = filedialog.askdirectory(
@@ -203,18 +226,202 @@ def find_course_zips(active_folder, target_zip_name=None):
     return list(set(zips))
 
 
-def find_assignment_template(active_folder):
-    """Find template assignment.docx in active folder or standard paths."""
+def find_assignment_template(active_folder=""):
+    r"""
+    Find template assignment.docx in scripts/assets, active folder, or standard paths.
+    Base template: S:\01_ACADEMIC_STUDY\UoPeople as Student\02_COMPLETED_COURSES\CS2401-SWE\template assignment.docx,
+    bundled into scripts/assets/template_assignment.docx with local/server fallback.
+    """
     candidates = [
-        os.path.join(active_folder, "template assignment.docx"),
-        os.path.join(os.path.dirname(active_folder), "04_TEMPLATES_AND_TOOLS", "Document_Templates", "template_apa_doc.docx"),
-        os.path.join(os.path.dirname(active_folder), "04_TEMPLATES_AND_TOOLS", "template assignment.docx"),
-        os.path.join(os.path.dirname(active_folder), "template assignment.docx"),
+        os.path.join(SCRIPT_DIR, "assets", "template_assignment.docx"),
+        r"S:\01_ACADEMIC_STUDY\UoPeople as Student\02_COMPLETED_COURSES\CS2401-SWE\template assignment.docx",
     ]
+    if active_folder:
+        candidates.extend([
+            os.path.join(active_folder, "template assignment.docx"),
+            os.path.join(os.path.dirname(active_folder), "04_TEMPLATES_AND_TOOLS", "Document_Templates", "template_apa_doc.docx"),
+            os.path.join(os.path.dirname(active_folder), "04_TEMPLATES_AND_TOOLS", "template assignment.docx"),
+            os.path.join(os.path.dirname(active_folder), "template assignment.docx"),
+        ])
     for c in candidates:
         if os.path.isfile(c):
-            return c
+            return os.path.abspath(c)
     return None
+
+
+def populate_template_xml_fallback(base_template_path, target_path, title, department, course, instructor, due_date):
+    """Fallback docx population using standard library zipfile and XML manipulation."""
+    if not os.path.isfile(base_template_path):
+        return False
+
+    target_dir = os.path.dirname(target_path)
+    if target_dir:
+        os.makedirs(target_dir, exist_ok=True)
+
+    formatted_due_date = due_date or time.strftime("%B %d, %Y")
+
+    import xml.etree.ElementTree as ET
+    with zipfile.ZipFile(base_template_path, 'r') as zin:
+        doc_xml = zin.read('word/document.xml')
+        other_files = {item.filename: zin.read(item.filename) for item in zin.infolist() if item.filename != 'word/document.xml'}
+
+    xml_text = doc_xml.decode('utf-8', errors='replace')
+    # Register all namespaces found in document.xml to prevent ns0:, ns1: rewriting
+    ns_matches = re.findall(r'xmlns:([a-zA-Z0-9_\-]+)="([^"]+)"', xml_text)
+    for prefix, uri in ns_matches:
+        try:
+            ET.register_namespace(prefix, uri)
+        except Exception:
+            pass
+
+    root = ET.fromstring(doc_xml)
+    ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+    paras = root.findall('.//w:p', ns)
+
+    def get_xml_p_text(p):
+        return "".join(t.text or "" for t in p.findall('.//w:t', ns)).strip()
+
+    def set_xml_p(p, text):
+        t_nodes = p.findall('.//w:t', ns)
+        if t_nodes:
+            t_nodes[0].text = text
+            for t in t_nodes[1:]:
+                t.text = ''
+        else:
+            r = ET.SubElement(p, f'{{{ns["w"]}}}r')
+            t = ET.SubElement(r, f'{{{ns["w"]}}}t')
+            t.text = text
+
+    is_canonical = (
+        len(paras) > 6 and
+        get_xml_p_text(paras[1]) == 'x' and
+        'Department of' in get_xml_p_text(paras[3])
+    )
+
+    if is_canonical:
+        set_xml_p(paras[1], title)
+        set_xml_p(paras[3], department)
+        set_xml_p(paras[4], course)
+        set_xml_p(paras[5], instructor)
+        set_xml_p(paras[6], formatted_due_date)
+    else:
+        p_course_idx = None
+        p_date_idx = None
+        for idx, p in enumerate(paras):
+            txt = get_xml_p_text(p)
+            if txt == 'x' or re.match(r'^Unit\s+\d+\s+Written\s+Assignment', txt, re.I):
+                set_xml_p(p, title)
+            elif 'Department of' in txt or 'University of' in txt:
+                set_xml_p(p, department)
+            elif re.search(r'[A-Z]{2,6}\s*\d{3,5}', txt):
+                set_xml_p(p, course)
+                p_course_idx = idx
+            elif re.search(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}', txt) or 'July x' in txt:
+                set_xml_p(p, formatted_due_date)
+                p_date_idx = idx
+
+        if p_course_idx is not None and p_date_idx is not None and p_date_idx > p_course_idx:
+            for idx in range(p_course_idx + 1, p_date_idx):
+                txt_b = get_xml_p_text(paras[idx])
+                if txt_b and 'Department' not in txt_b:
+                    set_xml_p(paras[idx], instructor)
+                    break
+        else:
+            for p in paras:
+                txt = get_xml_p_text(p)
+                if 'Christor Pancho' in txt or txt.lower().startswith('instructor') or txt.lower().startswith('dr.'):
+                    set_xml_p(p, instructor)
+
+    new_xml = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+
+    with zipfile.ZipFile(target_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+        zout.writestr('word/document.xml', new_xml)
+        for fname, data in other_files.items():
+            zout.writestr(fname, data)
+    return True
+
+
+def populate_assignment_template(base_template_path, target_path, title, department, course, instructor, due_date):
+    """
+    Populates base docx assignment template with unit title, department, course code/name,
+    instructor name, and due date, preserving paragraph alignment and run formatting.
+    """
+    if not os.path.isfile(base_template_path):
+        return False
+
+    target_dir = os.path.dirname(target_path)
+    if target_dir:
+        os.makedirs(target_dir, exist_ok=True)
+
+    formatted_due_date = due_date or time.strftime("%B %d, %Y")
+
+    try:
+        import docx
+        doc = docx.Document(base_template_path)
+
+        def set_p(p, text):
+            if p.runs:
+                p.runs[0].text = text
+                for r in p.runs[1:]:
+                    r.text = ""
+            else:
+                p.add_run(text)
+
+        # 1. First check if this is the exact canonical base template layout
+        is_canonical = (
+            len(doc.paragraphs) > 6 and
+            doc.paragraphs[1].text.strip() == 'x' and
+            'Department of' in doc.paragraphs[3].text
+        )
+
+        if is_canonical:
+            set_p(doc.paragraphs[1], title)
+            set_p(doc.paragraphs[3], department)
+            set_p(doc.paragraphs[4], course)
+            set_p(doc.paragraphs[5], instructor)
+            set_p(doc.paragraphs[6], formatted_due_date)
+        else:
+            p_course_idx = None
+            p_date_idx = None
+            for idx, p in enumerate(doc.paragraphs):
+                txt = p.text.strip()
+                if txt == 'x' or re.match(r'^Unit\s+\d+\s+Written\s+Assignment', txt, re.I):
+                    set_p(p, title)
+                elif 'Department of' in txt or 'University of' in txt:
+                    set_p(p, department)
+                elif re.search(r'[A-Z]{2,6}\s*\d{3,5}', txt):
+                    set_p(p, course)
+                    p_course_idx = idx
+                elif re.search(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}', txt) or 'July x' in txt:
+                    set_p(p, formatted_due_date)
+                    p_date_idx = idx
+
+            if p_course_idx is not None and p_date_idx is not None and p_date_idx > p_course_idx:
+                for idx in range(p_course_idx + 1, p_date_idx):
+                    p_between = doc.paragraphs[idx]
+                    txt_b = p_between.text.strip()
+                    if txt_b and 'Department' not in txt_b:
+                        set_p(p_between, instructor)
+                        break
+            else:
+                for p in doc.paragraphs:
+                    txt = p.text.strip()
+                    if 'Christor Pancho' in txt or txt.lower().startswith('instructor') or txt.lower().startswith('dr.'):
+                        set_p(p, instructor)
+
+        doc.save(target_path)
+        return True
+    except Exception as e:
+        print(f"[Warning] python-docx population failed ({e}). Falling back to XML replacement...")
+        try:
+            return populate_template_xml_fallback(base_template_path, target_path, title, department, course, instructor, formatted_due_date)
+        except Exception as e2:
+            print(f"[Error] XML docx population also failed: {e2}")
+            try:
+                shutil.copy2(base_template_path, target_path)
+                return True
+            except Exception:
+                return False
 
 
 def extract_units_from_index_html(index_html_content):
@@ -298,7 +505,7 @@ def inspect_unit_assignments(unit_num, unit_dir, units_from_html=None, master_md
         matched_unit = None
         for idx, u in enumerate(units_from_html):
             u_title = u.get("title", "")
-            m_num = re.search(r'(?:unit|week)\s*([1-8])(?!\d)', u_title, re.I)
+            m_num = re.search(r'(?:unit|week)[_\s]*([1-8])(?!\d)', u_title, re.I) or re.search(r'^0?([1-8])[-_]', u_title)
             u_n = int(m_num.group(1)) if m_num else None
             if u_n == unit_num:
                 matched_unit = u
@@ -345,7 +552,7 @@ def get_course_unit_dirs(course_dir):
     for item in os.listdir(course_dir):
         full_p = os.path.join(course_dir, item)
         if os.path.isdir(full_p):
-            m = re.search(r'(?:unit|week)\s*([1-8])(?!\d)', item, re.IGNORECASE)
+            m = re.search(r'(?:unit|week)[_\s]*([1-8])(?!\d)', item, re.IGNORECASE) or re.search(r'^0?([1-8])[-_]', item)
             if m:
                 unit_num = int(m.group(1))
                 has_md = any(f.endswith('.md') for f in os.listdir(full_p))
@@ -371,6 +578,39 @@ def process_course_folder(course_dir, active_folder):
     template_docx = find_assignment_template(active_folder)
     if template_docx:
         print(f"[Template] Found template assignment: {template_docx}")
+    else:
+        print(f"[Template Warning] No base template assignment.docx found.")
+
+    # Load course_metadata.json if available
+    metadata_path = os.path.join(course_dir, "course_metadata.json")
+    metadata = {}
+    if os.path.isfile(metadata_path):
+        try:
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            print(f"[Metadata] Loaded course_metadata.json for {metadata.get('courseCode', 'Course')}")
+        except Exception as me:
+            print(f"[Warning] Could not parse course_metadata.json: {me}")
+
+    # Fallback extraction from folder name / files
+    folder_basename = os.path.basename(course_dir)
+    m_code = re.search(r'([A-Z]{2,6})\s*(\d{3,5})', folder_basename, re.I)
+    dept_prefix = m_code.group(1).upper() if m_code else "CS"
+    code_num = m_code.group(2) if m_code else ""
+    fallback_code = f"{dept_prefix} {code_num}".strip() if code_num else dept_prefix
+    fallback_dept = DEPARTMENT_MAP.get(dept_prefix, "Computer Science")
+    fallback_course_title = re.sub(r'^[A-Z]{2,6}\s*\d{3,5}[-_:\s]*', '', folder_basename).replace('_', ' ').strip() or "Course"
+
+    course_code = metadata.get("courseCode") or fallback_code
+    course_title = metadata.get("courseName") or fallback_course_title
+    dept_name = metadata.get("department") or fallback_dept
+    dept_line = metadata.get("departmentLine") or f"Department of {dept_name}, University of The People"
+    course_line = metadata.get("courseLine") or f"{course_code}: {course_title}"
+    instructor_name = metadata.get("instructor") or "Instructor"
+
+    student_data = metadata.get("student") or {}
+    student_initials = (student_data.get("initials") or "myk").lower().strip()
+    assignments_meta = metadata.get("assignments") or {}
 
     index_html_content = ""
     index_path = os.path.join(course_dir, "index.html")
@@ -407,7 +647,7 @@ def process_course_folder(course_dir, active_folder):
             u_folder_name = f"{str(idx+1).zfill(2)}_{clean_u_title}"
             u_dir_path = os.path.join(course_dir, u_folder_name)
             os.makedirs(u_dir_path, exist_ok=True)
-            m_num = re.search(r'(?:unit|week)\s*([1-8])(?!\d)', title, re.I)
+            m_num = re.search(r'(?:unit|week)[_\s]*([1-8])(?!\d)', title, re.I) or re.search(r'^0?([1-8])[-_]', title)
             unit_num = int(m_num.group(1)) if m_num else (idx + 1)
             if 1 <= unit_num <= 8:
                 unit_dirs.append((unit_num, u_dir_path))
@@ -429,27 +669,40 @@ def process_course_folder(course_dir, active_folder):
 
         print(f"  Unit {unit_num} ({unit_title}): Discussion={has_disc}, Assignment={has_assign}")
 
-        # 1. Discussion Forum Subfolder
+        # 1. Discussion Forum Subfolder (create folder only; never copy assignment template)
         if has_disc:
             disc_dir = os.path.join(coursework_dir, "Discussion_Forum")
             os.makedirs(disc_dir, exist_ok=True)
-            disc_file = os.path.join(disc_dir, "discussion.docx")
-            if template_docx and not os.path.exists(disc_file):
-                try:
-                    shutil.copy2(template_docx, disc_file)
-                except Exception as e:
-                    print(f"    [Warning] Could not copy template to discussion: {e}")
 
-        # 2. Assignment Activity Subfolder
+        # 2. Assignment Activity Subfolder (populated template)
         if has_assign:
             assign_dir = os.path.join(coursework_dir, "Assignment_Activity")
             os.makedirs(assign_dir, exist_ok=True)
-            assign_file = os.path.join(assign_dir, "assignment.docx")
+
+            assign_info = assignments_meta.get(str(unit_num)) or assignments_meta.get(unit_num) or {}
+            assignment_title = assign_info.get("title") or f"Unit {unit_num} Written Assignment"
+            assignment_due_date = assign_info.get("dueDate") or time.strftime("%B %d, %Y")
+
+            custom_filename = assign_info.get("templateFileName") or f"week{unit_num}_assignment_{student_initials}_template.docx"
+            assign_file = os.path.join(assign_dir, custom_filename)
+
             if template_docx and not os.path.exists(assign_file):
                 try:
-                    shutil.copy2(template_docx, assign_file)
+                    success = populate_assignment_template(
+                        base_template_path=template_docx,
+                        target_path=assign_file,
+                        title=assignment_title,
+                        department=dept_line,
+                        course=course_line,
+                        instructor=instructor_name,
+                        due_date=assignment_due_date
+                    )
+                    if success:
+                        print(f"    [Template] Populated {custom_filename} (Due: {assignment_due_date})")
+                    else:
+                        print(f"    [Warning] Failed to populate {custom_filename}")
                 except Exception as e:
-                    print(f"    [Warning] Could not copy template to assignment: {e}")
+                    print(f"    [Warning] Could not copy populated template to assignment: {e}")
 
         if not has_disc and not has_assign:
             print(f"    (No required assignments flagged for Unit {unit_num})")

@@ -489,6 +489,22 @@
         }
       }
 
+      emitProgress(91, 'Generating course metadata manifest...');
+      try {
+        const [studentProfile, instructorName] = await Promise.all([
+          D2LApi.getStudentProfile().catch(() => ({ fullName: '', initials: 'myk' })),
+          D2LApi.getCourseInstructor(orgUnitId).catch(() => 'Instructor')
+        ]);
+        const courseMetadata = D2LApi.buildCourseMetadata(courseInfo, dropboxFolders, studentProfile, instructorName);
+        zipFiles.push({
+          name: 'course_metadata.json',
+          content: JSON.stringify(courseMetadata, null, 2)
+        });
+        console.log('[Course Exporter] Packed course_metadata.json into package:', courseMetadata);
+      } catch (me) {
+        console.warn('[Course Exporter] Could not build course_metadata.json:', me);
+      }
+
       emitProgress(93, 'Compressing package into ZIP archive...');
       const zipBlob = await ZipBuilder.createZip(zipFiles);
 
@@ -783,6 +799,129 @@
     }
   }
 
+  /* ==========================================================================
+     Auto-Download All Courses Data ZIPs Engine (Term Start)
+     ========================================================================== */
+  let isBatchDownloadingInProgress = false;
+  const downloadingCourses = new Set();
+
+  async function checkAndAutoDownloadAllCourses() {
+    const pathname = (window.location.pathname || '').toLowerCase();
+    if (pathname.includes('/d2l/login') || pathname.includes('/d2l/lp/auth')) {
+      return;
+    }
+
+    try {
+      const storage = await new Promise(r => chrome.storage.local.get([
+        'autoDownloadCourses',
+        'downloadedCourses',
+        'optDownloadAssets'
+      ], r));
+
+      if (!storage || storage.autoDownloadCourses !== true) {
+        return;
+      }
+
+      if (isBatchDownloadingInProgress) {
+        return;
+      }
+
+      const downloadedCourses = storage.downloadedCourses || {};
+
+      let enrolled = await D2LApi.getEnrolledCourses().catch(err => {
+        console.warn('[Course Exporter] Auto-download: Failed to get enrolled courses:', err);
+        return [];
+      });
+
+      const currentOu = detectOrgUnitId();
+      if (currentOu && !enrolled.some(c => String(c.id || c.orgUnitId) === String(currentOu))) {
+        const info = await D2LApi.getCourseInfo(currentOu).catch(() => ({ id: currentOu, name: `Course ${currentOu}` }));
+        enrolled.push({
+          id: String(currentOu),
+          orgUnitId: String(currentOu),
+          name: info.name || `Course ${currentOu}`
+        });
+      }
+
+      if (enrolled.length === 0) {
+        return;
+      }
+
+      const undownloadedCourses = enrolled.filter(c => {
+        const idStr = String(c.id || c.orgUnitId);
+        return !downloadedCourses[idStr] && !downloadingCourses.has(idStr);
+      });
+
+      if (undownloadedCourses.length === 0) {
+        return;
+      }
+
+      console.log(`[Course Exporter] Auto-download active: Found ${undownloadedCourses.length} undownloaded course(s). Starting sequential download...`);
+      isBatchDownloadingInProgress = true;
+      undownloadedCourses.forEach(c => downloadingCourses.add(String(c.id || c.orgUnitId)));
+
+      const downloadAssets = storage.optDownloadAssets !== false;
+      const exportFormat = 'combined'; // Combined interactive HTML + Markdown archive
+
+      showCompletionToast(
+        'Term Start Auto-Download',
+        0,
+        undownloadedCourses.length,
+        5,
+        `Auto-downloading ${undownloadedCourses.length} course package(s) in combined format...`
+      );
+
+      for (let i = 0; i < undownloadedCourses.length; i++) {
+        const course = undownloadedCourses[i];
+        const ouId = String(course.id || course.orgUnitId);
+        showCompletionToast(
+          course.name,
+          i + 1,
+          undownloadedCourses.length,
+          Math.round((i / Math.max(undownloadedCourses.length, 1)) * 100),
+          `Exporting package ${i + 1} of ${undownloadedCourses.length}: ${course.name}...`
+        );
+
+        try {
+          await new Promise((resolve) => {
+            runExportPipeline(ouId, downloadAssets, exportFormat, 'full', (res) => {
+              resolve(res);
+            });
+          });
+
+          const freshStorage = await new Promise(r => chrome.storage.local.get(['downloadedCourses'], r));
+          const updated = freshStorage.downloadedCourses || {};
+          updated[ouId] = {
+            downloadedAt: new Date().toISOString(),
+            courseName: course.name,
+            format: exportFormat
+          };
+          await new Promise(r => chrome.storage.local.set({ downloadedCourses: updated }, r));
+          console.log(`[Course Exporter] Auto-download finished for course ${course.name} (${ouId})`);
+        } catch (ce) {
+          console.error(`[Course Exporter] Auto-download failed for course ${course.name}:`, ce);
+        } finally {
+          downloadingCourses.delete(ouId);
+        }
+      }
+
+      showCompletionToast(
+        'All Courses Downloaded',
+        undownloadedCourses.length,
+        undownloadedCourses.length,
+        100,
+        `Successfully downloaded all ${undownloadedCourses.length} course packages!`,
+        true
+      );
+
+      isBatchDownloadingInProgress = false;
+
+    } catch (e) {
+      console.warn('[Course Exporter] checkAndAutoDownloadAllCourses error:', e);
+      isBatchDownloadingInProgress = false;
+    }
+  }
+
   let autoMarkDebounceTimer = null;
   function debouncedAutoMark(delay = 800) {
     if (autoMarkDebounceTimer) clearTimeout(autoMarkDebounceTimer);
@@ -791,8 +930,17 @@
     }, delay);
   }
 
-  // Initialize auto-mark check on document idle
+  let autoDownloadDebounceTimer = null;
+  function debouncedAutoDownload(delay = 2000) {
+    if (autoDownloadDebounceTimer) clearTimeout(autoDownloadDebounceTimer);
+    autoDownloadDebounceTimer = setTimeout(() => {
+      checkAndAutoDownloadAllCourses();
+    }, delay);
+  }
+
+  // Initialize checks on document idle
   debouncedAutoMark(1200);
+  debouncedAutoDownload(2200);
 
   // Synchronize when settings or flags are changed in options page or popup
   if (chrome.storage && chrome.storage.onChanged) {
@@ -804,6 +952,12 @@
         if (changes.markedCourses) {
           debouncedAutoMark(400);
         }
+        if (changes.autoDownloadCourses && changes.autoDownloadCourses.newValue === true) {
+          debouncedAutoDownload(400);
+        }
+        if (changes.downloadedCourses) {
+          debouncedAutoDownload(600);
+        }
       }
     });
   }
@@ -814,6 +968,7 @@
     if (window.location.href !== lastObservedUrl) {
       lastObservedUrl = window.location.href;
       debouncedAutoMark(800);
+      debouncedAutoDownload(2000);
     }
   };
 

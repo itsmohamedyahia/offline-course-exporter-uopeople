@@ -231,9 +231,21 @@
               <span>Folder where course ZIPs are extracted and organized into unit coursework subfolders.</span>
             </div>
             <div class="input-with-action">
-              <input type="text" class="text-input" id="opt-active-courses-folder" value="S:\01_ACADEMIC_STUDY\UoPeople as Student\01_ACTIVE_COURSES" placeholder="S:\01_ACADEMIC_STUDY\UoPeople as Student\01_ACTIVE_COURSES">
-              <button type="button" class="btn btn-sm btn-secondary" id="btn-reset-active-courses-folder" title="Reset to default path">Reset</button>
+              <input type="text" class="text-input" id="opt-active-courses-folder" value="" placeholder="Paste directory path or click Browse...">
+              <button type="button" class="btn btn-sm btn-primary" id="btn-browse-active-courses-folder" title="Open native desktop folder picker">Browse...</button>
+              <button type="button" class="btn btn-sm btn-secondary" id="btn-clear-active-courses-folder" title="Clear directory path">Clear</button>
             </div>
+          </div>
+
+          <div class="setting-item">
+            <div class="setting-info">
+              <strong>Auto-Download Course Packages on Term Start</strong>
+              <span>Automatically downloads all enrolled course packages in combined format upon visiting Brightspace. Provides immediate full offline access to all materials without navigating each course.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="opt-auto-download-courses">
+              <span class="slider"></span>
+            </label>
           </div>
 
           <div class="setting-item">
