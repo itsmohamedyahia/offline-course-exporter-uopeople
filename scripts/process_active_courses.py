@@ -49,6 +49,27 @@ DEPARTMENT_MAP = {
     'EDUC': 'Education',
 }
 
+KNOWN_COURSES = {
+    'CS2301': 'Operating Systems',
+    'CS2401': 'Software Engineering 1',
+    'CS3303': 'Data Structures',
+    'CS4404': 'Advanced Networking and Data Security',
+    'CS4406': 'Computer Graphics',
+    'ENGL1405': 'World Literature',
+    'PHIL1402': 'Introduction to Philosophy',
+}
+
+UPEOPLE_TERM_DATES = {
+    1: "September 09, 2026",
+    2: "September 16, 2026",
+    3: "September 23, 2026",
+    4: "September 30, 2026",
+    5: "October 07, 2026",
+    6: "October 14, 2026",
+    7: "October 21, 2026",
+    8: "October 28, 2026",
+}
+
 
 def get_configured_active_folder():
     """Retrieve active courses folder from config file or return empty if unset."""
@@ -259,6 +280,32 @@ def find_assignment_template(active_folder=""):
                 print(f"[Template Warning] Remote download from {url} to {dest} failed: {e}")
 
     return None
+
+
+def is_user_modified_docx(docx_path, template_docx_path=None):
+    """
+    Returns True if the document contains real user writing/post.
+    Returns False if it is identical to the template or has no user body content.
+    """
+    if not os.path.isfile(docx_path):
+        return False
+    try:
+        # Fast MD5 hash check against base template
+        if template_docx_path and os.path.isfile(template_docx_path):
+            with open(docx_path, 'rb') as f1, open(template_docx_path, 'rb') as f2:
+                if hashlib.md5(f1.read()).hexdigest() == hashlib.md5(f2.read()).hexdigest():
+                    return False
+        import docx
+        doc = docx.Document(docx_path)
+        paras = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        if len(paras) <= 7:
+            return False
+        body_text = ' '.join(paras[7:]).strip()
+        if len(body_text) > 100 and "Lorem" not in body_text:
+            return True
+        return False
+    except Exception:
+        return False
 
 
 def populate_template_xml_fallback(base_template_path, target_path, title, department, course, instructor, due_date):
@@ -610,8 +657,13 @@ def process_course_folder(course_dir, active_folder):
     dept_prefix = m_code.group(1).upper() if m_code else "CS"
     code_num = m_code.group(2) if m_code else ""
     fallback_code = f"{dept_prefix} {code_num}".strip() if code_num else dept_prefix
+    clean_code_key = f"{dept_prefix}{code_num}"
     fallback_dept = DEPARTMENT_MAP.get(dept_prefix, "Computer Science")
-    fallback_course_title = re.sub(r'^[A-Z]{2,6}\s*\d{3,5}[-_:\s]*', '', folder_basename).replace('_', ' ').strip() or "Course"
+
+    extracted_title = re.sub(r'^[A-Z]{2,6}\s*\d{3,5}[-_:\s]*', '', folder_basename).replace('_', ' ').strip()
+    if not extracted_title or extracted_title.lower() == "course":
+        extracted_title = KNOWN_COURSES.get(clean_code_key, "")
+    fallback_course_title = extracted_title or "Course"
 
     course_code = metadata.get("courseCode") or fallback_code
     course_title = metadata.get("courseName") or fallback_course_title
@@ -682,18 +734,42 @@ def process_course_folder(course_dir, active_folder):
         print(f"  Unit {unit_num} ({unit_title}): Discussion={has_disc}, Assignment={has_assign}")
 
         # 1. Discussion Forum Subfolder (create folder only; never copy assignment template)
+        disc_dir = os.path.join(coursework_dir, "Discussion_Forum")
         if has_disc:
-            disc_dir = os.path.join(coursework_dir, "Discussion_Forum")
             os.makedirs(disc_dir, exist_ok=True)
+            # Remove unpopulated template if present (preserve user written documents)
+            legacy_disc = os.path.join(disc_dir, "discussion.docx")
+            if os.path.isfile(legacy_disc):
+                if not is_user_modified_docx(legacy_disc, template_docx):
+                    try:
+                        os.remove(legacy_disc)
+                        print(f"    [Cleanup] Removed unpopulated template discussion.docx from Discussion_Forum")
+                    except Exception as e:
+                        print(f"    [Warning] Could not remove legacy discussion file: {e}")
+                else:
+                    print(f"    [Preserve] Kept user-modified discussion document in Discussion_Forum")
+        else:
+            if os.path.isdir(disc_dir):
+                legacy_disc = os.path.join(disc_dir, "discussion.docx")
+                if os.path.isfile(legacy_disc) and not is_user_modified_docx(legacy_disc, template_docx):
+                    try:
+                        os.remove(legacy_disc)
+                    except Exception:
+                        pass
+                if len(os.listdir(disc_dir)) == 0:
+                    try:
+                        os.rmdir(disc_dir)
+                    except Exception:
+                        pass
 
         # 2. Assignment Activity Subfolder (populated template)
+        assign_dir = os.path.join(coursework_dir, "Assignment_Activity")
         if has_assign:
-            assign_dir = os.path.join(coursework_dir, "Assignment_Activity")
             os.makedirs(assign_dir, exist_ok=True)
 
             assign_info = assignments_meta.get(str(unit_num)) or assignments_meta.get(unit_num) or {}
             assignment_title = assign_info.get("title") or f"Unit {unit_num} Assignment Activity"
-            assignment_due_date = assign_info.get("dueDate") or time.strftime("%B %d, %Y")
+            assignment_due_date = assign_info.get("dueDate") or UPEOPLE_TERM_DATES.get(unit_num) or time.strftime("%B %d, %Y")
 
             custom_filename = assign_info.get("templateFileName") or f"week{unit_num}_assignment_{student_initials}_template.docx"
             assign_file = os.path.join(assign_dir, custom_filename)
@@ -715,6 +791,31 @@ def process_course_folder(course_dir, active_folder):
                         print(f"    [Warning] Failed to populate {custom_filename}")
                 except Exception as e:
                     print(f"    [Warning] Could not copy populated template to assignment: {e}")
+
+            # Check if legacy unpopulated assignment.docx exists and clean up
+            legacy_assign = os.path.join(assign_dir, "assignment.docx")
+            if os.path.isfile(legacy_assign):
+                if not is_user_modified_docx(legacy_assign, template_docx):
+                    try:
+                        os.remove(legacy_assign)
+                        print(f"    [Cleanup] Replaced legacy unpopulated assignment.docx with {custom_filename}")
+                    except Exception as e:
+                        print(f"    [Warning] Could not remove legacy assignment file: {e}")
+                else:
+                    print(f"    [Preserve] Kept user-modified assignment.docx in Assignment_Activity")
+        else:
+            if os.path.isdir(assign_dir):
+                legacy_assign = os.path.join(assign_dir, "assignment.docx")
+                if os.path.isfile(legacy_assign) and not is_user_modified_docx(legacy_assign, template_docx):
+                    try:
+                        os.remove(legacy_assign)
+                    except Exception:
+                        pass
+                if len(os.listdir(assign_dir)) == 0:
+                    try:
+                        os.rmdir(assign_dir)
+                    except Exception:
+                        pass
 
         if not has_disc and not has_assign:
             print(f"    (No required assignments flagged for Unit {unit_num})")
@@ -878,6 +979,7 @@ def main():
     parser.add_argument("--zip", help="Specific ZIP archive filename or path to unpack")
     parser.add_argument("--daemon", action="store_true", help="Run in continuous watcher mode")
     parser.add_argument("--course-dir", help="Process an already extracted course directory directly")
+    parser.add_argument("--reprocess", action="store_true", help="Reprocess all existing course folders in active directory")
     parser.add_argument("--archive-completed", action="store_true", help="Archive completed courses to 02_COMPLETED_COURSES")
     args = parser.parse_args()
 
@@ -910,20 +1012,29 @@ def main():
             process_course_folder(target, active_folder)
             return
 
-    # Find ZIP archives
-    zips = find_course_zips(active_folder, target_zip_name=args.zip)
-    if not zips:
-        print("[Status] No pending course ZIP archives found in active courses folder or Downloads.")
-        # Check existing course directories that might miss coursework folders
-        for item in os.listdir(active_folder):
+    # If --reprocess flag given or no zips found, normalize all existing courses in active folder
+    if args.reprocess:
+        print("[Reprocess] Normalizing all existing course directories in active courses folder...")
+        for item in sorted(os.listdir(active_folder)):
             full_p = os.path.join(active_folder, item)
             if os.path.isdir(full_p) and not item.startswith('.'):
                 unit_dirs = get_course_unit_dirs(full_p)
                 if unit_dirs:
-                    needs_cw = any(not os.path.exists(os.path.join(u_dir, "coursework")) for _, u_dir in unit_dirs)
-                    if needs_cw:
-                        print(f"[Re-check] Course directory {item} needs coursework structuring.")
-                        process_course_folder(full_p, active_folder)
+                    process_course_folder(full_p, active_folder)
+        return
+
+    # Find ZIP archives
+    zips = find_course_zips(active_folder, target_zip_name=args.zip)
+    if not zips:
+        print("[Status] No pending course ZIP archives found in active courses folder or Downloads.")
+        # Process existing course directories to normalize coursework and templates
+        for item in sorted(os.listdir(active_folder)):
+            full_p = os.path.join(active_folder, item)
+            if os.path.isdir(full_p) and not item.startswith('.'):
+                unit_dirs = get_course_unit_dirs(full_p)
+                if unit_dirs:
+                    print(f"[Normalizing Coursework] {item}")
+                    process_course_folder(full_p, active_folder)
         return
 
     print(f"[Discovered] Found {len(zips)} course package(s) to process:")
