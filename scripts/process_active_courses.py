@@ -680,7 +680,7 @@ def process_course_folder(course_dir, active_folder):
             os.makedirs(assign_dir, exist_ok=True)
 
             assign_info = assignments_meta.get(str(unit_num)) or assignments_meta.get(unit_num) or {}
-            assignment_title = assign_info.get("title") or f"Unit {unit_num} Written Assignment"
+            assignment_title = assign_info.get("title") or f"Unit {unit_num} Assignment Activity"
             assignment_due_date = assign_info.get("dueDate") or time.strftime("%B %d, %Y")
 
             custom_filename = assign_info.get("templateFileName") or f"week{unit_num}_assignment_{student_initials}_template.docx"

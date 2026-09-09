@@ -2211,7 +2211,7 @@ const D2LApi = {
 
       assignments[String(u)] = {
         unit: u,
-        title: `Unit ${u} Written Assignment`,
+        title: `Unit ${u} Assignment Activity`,
         dueDate: formattedDate,
         rawDueDate: rawDate,
         templateFileName: `week${u}_assignment_${initials}_template.docx`

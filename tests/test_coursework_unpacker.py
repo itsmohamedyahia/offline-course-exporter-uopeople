@@ -53,7 +53,7 @@ class TestAssignmentTemplatePopulation(unittest.TestCase):
     def test_populate_assignment_template_contents(self):
         """Verify population of Title, Department, Course, Instructor, and Due Date."""
         target_docx = os.path.join(self.temp_dir, "week4_assignment_myk_template.docx")
-        title = "Unit 4 Written Assignment"
+        title = "Unit 4 Assignment Activity"
         department = "Department of Computer Science, University of The People"
         course = "CS 2401: Software Engineering 1"
         instructor = "Christor Pancho"
@@ -105,13 +105,13 @@ class TestAssignmentTemplatePopulation(unittest.TestCase):
             "assignments": {
                 "1": {
                     "unit": 1,
-                    "title": "Unit 1 Written Assignment",
+                    "title": "Unit 1 Assignment Activity",
                     "dueDate": "September 17, 2026",
                     "templateFileName": "week1_assignment_myk_template.docx"
                 },
                 "2": {
                     "unit": 2,
-                    "title": "Unit 2 Written Assignment",
+                    "title": "Unit 2 Assignment Activity",
                     "dueDate": "September 24, 2026",
                     "templateFileName": "week2_assignment_myk_template.docx"
                 }
@@ -151,7 +151,7 @@ class TestAssignmentTemplatePopulation(unittest.TestCase):
             # 3. Check contents of populated template
             import docx
             doc = docx.Document(expected_filepath)
-            self.assertEqual(doc.paragraphs[1].text.strip(), f"Unit {u} Written Assignment")
+            self.assertEqual(doc.paragraphs[1].text.strip(), f"Unit {u} Assignment Activity")
             self.assertEqual(doc.paragraphs[3].text.strip(), "Department of Computer Science, University of The People")
             self.assertEqual(doc.paragraphs[4].text.strip(), "CS 2401: Software Engineering 1")
             self.assertEqual(doc.paragraphs[5].text.strip(), "Dr. Christor Pancho")
@@ -177,7 +177,7 @@ class TestAssignmentTemplatePopulation(unittest.TestCase):
 
         import docx
         doc = docx.Document(expected_filepath)
-        self.assertEqual(doc.paragraphs[1].text.strip(), "Unit 1 Written Assignment")
+        self.assertEqual(doc.paragraphs[1].text.strip(), "Unit 1 Assignment Activity")
         self.assertEqual(doc.paragraphs[3].text.strip(), "Department of Philosophy, University of The People")
         self.assertIn("PHIL 1402", doc.paragraphs[4].text.strip())
 
@@ -188,7 +188,7 @@ class TestAssignmentTemplatePopulation(unittest.TestCase):
             success = pac.populate_assignment_template(
                 base_template_path=str(self.bundled_template),
                 target_path=rel_target,
-                title="Unit 3 Written Assignment",
+                title="Unit 3 Assignment Activity",
                 department="Department of Computer Science, University of The People",
                 course="CS 2401: Software Engineering 1",
                 instructor="Dr. Christor Pancho",
@@ -206,7 +206,7 @@ class TestAssignmentTemplatePopulation(unittest.TestCase):
         success = pac.populate_template_xml_fallback(
             base_template_path=str(self.bundled_template),
             target_path=target_docx,
-            title="Unit 5 Written Assignment",
+            title="Unit 5 Assignment Activity",
             department="Department of Mathematics, University of The People",
             course="MATH 1201: College Algebra",
             instructor="Prof. Euler",
@@ -217,7 +217,7 @@ class TestAssignmentTemplatePopulation(unittest.TestCase):
 
         import docx
         doc = docx.Document(target_docx)
-        self.assertEqual(doc.paragraphs[1].text.strip(), "Unit 5 Written Assignment")
+        self.assertEqual(doc.paragraphs[1].text.strip(), "Unit 5 Assignment Activity")
         self.assertEqual(doc.paragraphs[3].text.strip(), "Department of Mathematics, University of The People")
         self.assertEqual(doc.paragraphs[4].text.strip(), "MATH 1201: College Algebra")
         self.assertEqual(doc.paragraphs[5].text.strip(), "Prof. Euler")
@@ -241,7 +241,7 @@ class TestAssignmentTemplatePopulation(unittest.TestCase):
         success = pac.populate_assignment_template(
             base_template_path=short_docx,
             target_path=target_out,
-            title="Unit 2 Written Assignment",
+            title="Unit 2 Assignment Activity",
             department="Department of Computer Science, University of The People",
             course="CS 2401: Software Engineering 1",
             instructor="Dr. Christor Pancho",
@@ -249,7 +249,7 @@ class TestAssignmentTemplatePopulation(unittest.TestCase):
         )
         self.assertTrue(success)
         populated = docx.Document(target_out)
-        self.assertEqual(populated.paragraphs[0].text.strip(), "Unit 2 Written Assignment")
+        self.assertEqual(populated.paragraphs[0].text.strip(), "Unit 2 Assignment Activity")
         self.assertEqual(populated.paragraphs[1].text.strip(), "Department of Computer Science, University of The People")
         self.assertEqual(populated.paragraphs[2].text.strip(), "CS 2401: Software Engineering 1")
         self.assertEqual(populated.paragraphs[3].text.strip(), "Dr. Christor Pancho")
@@ -258,10 +258,10 @@ class TestAssignmentTemplatePopulation(unittest.TestCase):
     def test_unit_regex_boundary_against_unit_10(self):
         r"""Verify regex boundary (?!\d) avoids Unit 1 matching Unit 10, 11, etc."""
         unit_1_regex = re.compile(r'(?:unit|week)\s*0?1(?!\d)', re.I)
-        self.assertTrue(unit_1_regex.search("Unit 1 Written Assignment"))
+        self.assertTrue(unit_1_regex.search("Unit 1 Assignment Activity"))
         self.assertTrue(unit_1_regex.search("Week 01 Assignment"))
-        self.assertIsNone(unit_1_regex.search("Unit 10 Written Assignment"))
-        self.assertIsNone(unit_1_regex.search("Unit 11 Written Assignment"))
+        self.assertIsNone(unit_1_regex.search("Unit 10 Assignment Activity"))
+        self.assertIsNone(unit_1_regex.search("Unit 11 Assignment Activity"))
         self.assertIsNone(unit_1_regex.search("Week 12 Assignment"))
 
     def test_student_profile_initials_generation(self):
@@ -290,6 +290,8 @@ class TestCompanionDaemon(unittest.TestCase):
     def tearDownClass(cls):
         cls.httpd.shutdown()
         cls.httpd.server_close()
+        cls.thread.join(timeout=2.0)
+        time.sleep(0.2)
 
     def test_health_endpoint(self):
         """Verify GET /health returns service status and port."""
