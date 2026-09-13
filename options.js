@@ -15,6 +15,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const autoMarkBadge = document.getElementById('auto-mark-status-badge');
   const optDownloadAssets = document.getElementById('opt-download-assets');
   const optExportScope = document.getElementById('opt-export-scope');
+  const optExportFormat = document.getElementById('opt-export-format');
+  const optAutoDownloadCourses = document.getElementById('opt-auto-download-courses');
+  const optActiveCoursesFolder = document.getElementById('opt-active-courses-folder');
+  const btnBrowseActiveCoursesFolder = document.getElementById('btn-browse-active-courses-folder');
+  const btnClearActiveCoursesFolder = document.getElementById('btn-clear-active-courses-folder');
 
   const activeTabDesc = document.getElementById('active-tab-desc');
   const btnRefreshActiveTab = document.getElementById('btn-refresh-active-tab');
@@ -75,11 +80,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   function loadStoredSettings() {
     if (!chrome.storage || !chrome.storage.local) return;
 
-    chrome.storage.local.get(['autoMarkCompleted', 'optDownloadAssets', 'exportScope', 'markedCourses'], (res) => {
+    chrome.storage.local.get(['autoMarkCompleted', 'autoDownloadCourses', 'optDownloadAssets', 'exportScope', 'exportFormat', 'activeCoursesFolder', 'markedCourses'], (res) => {
       // Auto-Mark
       const isAutoMark = !!res.autoMarkCompleted;
       optAutoMark.checked = isAutoMark;
       updateAutoMarkBadge(isAutoMark);
+
+      // Auto-Download Courses
+      if (optAutoDownloadCourses) {
+        optAutoDownloadCourses.checked = res.autoDownloadCourses !== false;
+      }
 
       // Download assets
       if (res.optDownloadAssets !== undefined) {
@@ -89,6 +99,27 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Export scope
       if (res.exportScope && optExportScope) {
         optExportScope.value = res.exportScope;
+      }
+
+      // Export format
+      if (optExportFormat) {
+        optExportFormat.value = res.exportFormat || 'combined';
+      }
+
+      // Active courses folder (no default path pre-filled)
+      if (optActiveCoursesFolder) {
+        optActiveCoursesFolder.value = res.activeCoursesFolder || '';
+        if (!optActiveCoursesFolder.value) {
+          fetch('http://127.0.0.1:4048/get-folder')
+            .then(r => r.json())
+            .then(d => {
+              if (d && d.folder) {
+                optActiveCoursesFolder.value = d.folder;
+                chrome.storage.local.set({ activeCoursesFolder: d.folder });
+              }
+            })
+            .catch(() => {});
+        }
       }
 
       // Marked courses
@@ -107,6 +138,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
+  if (optAutoDownloadCourses) {
+    optAutoDownloadCourses.addEventListener('change', () => {
+      const enabled = optAutoDownloadCourses.checked;
+      chrome.storage.local.set({ autoDownloadCourses: enabled }, () => {
+        showToast(enabled ? 'Auto-Download enabled for term start.' : 'Auto-Download turned off.');
+      });
+    });
+  }
+
   optDownloadAssets.addEventListener('change', () => {
     chrome.storage.local.set({ optDownloadAssets: optDownloadAssets.checked }, () => {
       showToast('Attachment download preference updated.');
@@ -118,6 +158,65 @@ document.addEventListener('DOMContentLoaded', async () => {
       showToast('Default export mode updated.');
     });
   });
+
+  if (optExportFormat) {
+    optExportFormat.addEventListener('change', () => {
+      chrome.storage.local.set({ exportFormat: optExportFormat.value }, () => {
+        showToast('Default export format updated.');
+      });
+    });
+  }
+
+  if (optActiveCoursesFolder) {
+    optActiveCoursesFolder.addEventListener('change', () => {
+      const val = (optActiveCoursesFolder.value || '').trim();
+      chrome.storage.local.set({ activeCoursesFolder: val }, () => {
+        showToast(val ? 'Active courses directory updated.' : 'Active courses directory cleared.');
+      });
+      if (val) {
+        fetch('http://127.0.0.1:4048/process-courses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ activeCoursesFolder: val, fileName: '', courseName: '' })
+        }).catch(() => {});
+      }
+    });
+  }
+
+  if (btnBrowseActiveCoursesFolder) {
+    btnBrowseActiveCoursesFolder.addEventListener('click', async () => {
+      btnBrowseActiveCoursesFolder.disabled = true;
+      btnBrowseActiveCoursesFolder.textContent = 'Selecting...';
+      try {
+        const resp = await fetch('http://127.0.0.1:4048/select-folder', { method: 'POST' });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.folder) {
+            optActiveCoursesFolder.value = data.folder;
+            chrome.storage.local.set({ activeCoursesFolder: data.folder }, () => {
+              showToast(`Active courses directory set: ${data.folder}`);
+            });
+          }
+        }
+      } catch (e) {
+        showToast('Could not reach daemon on port 4048. Please paste path manually.', false);
+      } finally {
+        btnBrowseActiveCoursesFolder.disabled = false;
+        btnBrowseActiveCoursesFolder.textContent = 'Browse...';
+      }
+    });
+  }
+
+  if (btnClearActiveCoursesFolder) {
+    btnClearActiveCoursesFolder.addEventListener('click', () => {
+      if (optActiveCoursesFolder) {
+        optActiveCoursesFolder.value = '';
+        chrome.storage.local.set({ activeCoursesFolder: '' }, () => {
+          showToast('Active courses directory cleared.');
+        });
+      }
+    });
+  }
 
   // 5. Render Marked Courses History Table
   function renderMarkedCoursesTable(markedCoursesMap) {
@@ -376,6 +475,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 9. Listen for live runtime progress & storage updates
   chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === 'BATCH_MARK_PROGRESS') {
+      activeProgressWrap.classList.remove('hidden');
+      updateActiveProgress(msg.percent, msg.status);
+    }
+    if (msg.action === 'BATCH_COURSES_COMPLETED') {
+      const count = msg.completedCourses || msg.totalCourses;
+      updateActiveProgress(100, `Done! Completed ${count} course${count > 1 ? 's' : ''} (${msg.totalTopics || 0} topics).`);
+      showToast(`All attending courses completed! (${count} courses marked)`);
+      loadStoredSettings();
+      checkActiveBrightspaceTab();
+      setTimeout(() => {
+        if (activeProgressWrap) activeProgressWrap.classList.add('hidden');
+      }, 3500);
+    }
     if (msg.action === 'COURSE_MARK_PROGRESS') {
       if (!activeCourseInfo || String(msg.orgUnitId) === String(activeCourseInfo.orgUnitId)) {
         activeProgressWrap.classList.remove('hidden');

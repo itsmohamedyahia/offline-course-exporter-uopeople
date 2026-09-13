@@ -63,6 +63,116 @@ const D2LApi = {
     };
   },
 
+  // Discover all enrolled courses the student is attending
+  async getEnrolledCourses() {
+    const courses = [];
+    const seenIds = new Set();
+
+    const addCourse = (id, name, code = '') => {
+      if (!id) return;
+      const strId = String(id).trim();
+      if (!strId || strId === '6606' || seenIds.has(strId)) return;
+      seenIds.add(strId);
+      courses.push({
+        id: strId,
+        orgUnitId: strId,
+        name: this.cleanCourseName(name) || `Course ${strId}`,
+        code: (code || '').trim()
+      });
+    };
+
+    // 1. Query Valence LP myenrollments API
+    const lpVersions = ['1.30', '1.45', '1.26', '1.0'];
+    for (const ver of lpVersions) {
+      try {
+        const url = `/d2l/api/lp/${ver}/enrollments/myenrollments/?canAccess=true&orgUnitTypeId=3`;
+        const resp = await fetch(url, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          credentials: 'include'
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          const items = Array.isArray(data) ? data : (data.Items || []);
+          for (const item of items) {
+            const ou = item.OrgUnit || item;
+            if (ou && ou.Id) {
+              if (item.Access && item.Access.CanAccess === false) continue;
+              addCourse(ou.Id, ou.Name, ou.Code);
+            }
+          }
+          if (courses.length > 0) {
+            console.log(`[Course Exporter] Discovered ${courses.length} enrolled courses via Valence LP v${ver}`);
+            return courses;
+          }
+        }
+      } catch (e) {
+        console.warn(`Valence myenrollments API v${ver} attempt failed:`, e);
+      }
+    }
+
+    // 2. Secondary API attempt: general myenrollments without orgUnitTypeId query filter
+    try {
+      const resp = await fetch('/d2l/api/lp/1.30/enrollments/myenrollments/?canAccess=true', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'include'
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const items = Array.isArray(data) ? data : (data.Items || []);
+        for (const item of items) {
+          const ou = item.OrgUnit || item;
+          if (ou && ou.Id && (ou.Type?.Id === 3 || ou.Type?.Code === 'Course Offering' || !ou.Type)) {
+            if (item.Access && item.Access.CanAccess === false) continue;
+            addCourse(ou.Id, ou.Name, ou.Code);
+          }
+        }
+        if (courses.length > 0) {
+          return courses;
+        }
+      }
+    } catch (e) {}
+
+    // 3. DOM Fallback: inspect page for course cards, tiles, and navigation links
+    if (typeof document !== 'undefined') {
+      try {
+        const courseCards = document.querySelectorAll(
+          'd2l-enrollment-card, .d2l-course-tile, .d2l-card, [data-org-unit-id], a[href*="/d2l/home/"]'
+        );
+        courseCards.forEach(card => {
+          let ouId = (typeof card.getAttribute === 'function' ? (card.getAttribute('data-org-unit-id') || card.getAttribute('org-unit-id')) : null) || card['data-org-unit-id'];
+          let courseName = '';
+
+          if (!ouId && card.href) {
+            const m = card.href.match(/\/d2l\/home\/(\d+)/i);
+            if (m && m[1] !== '6606') ouId = m[1];
+          }
+
+          if (!ouId && typeof card.querySelector === 'function') {
+            const anchor = card.querySelector('a[href*="/d2l/home/"], a[href*="/d2l/le/content/"]');
+            if (anchor && anchor.href) {
+              const m = anchor.href.match(/\/d2l\/(?:home|le\/content)\/(\d+)/i);
+              if (m && m[1] !== '6606') ouId = m[1];
+            }
+          }
+
+          if (ouId && ouId !== '6606') {
+            const titleEl = typeof card.querySelector === 'function' ? card.querySelector('.d2l-card-title, h2, h3, [title], a') : null;
+            if (titleEl) {
+              courseName = (typeof titleEl.getAttribute === 'function' ? titleEl.getAttribute('title') : null) || titleEl.title || titleEl.innerText || titleEl.textContent || '';
+            } else if (card.innerText) {
+              courseName = card.innerText.split('\n')[0];
+            }
+            addCourse(ouId, courseName);
+          }
+        });
+      } catch (domErr) {
+        console.warn('DOM fallback scraping for enrolled courses encountered an error:', domErr);
+      }
+    }
+
+    return courses;
+  },
+
   async getTOC(orgUnitId) {
     const apiVersions = ['1.54', '1.43', '1.30', '1.0'];
     for (const ver of apiVersions) {
@@ -1884,6 +1994,383 @@ const D2LApi = {
 
     await Promise.all(workers);
     return { total, completed, failed };
+  },
+
+  DEPARTMENT_MAP: {
+    'CS': 'Computer Science',
+    'MATH': 'Mathematics',
+    'PHIL': 'Philosophy',
+    'HIST': 'History',
+    'PSYC': 'Psychology',
+    'SOC': 'Sociology',
+    'BUS': 'Business Administration',
+    'ECON': 'Economics',
+    'BIOL': 'Biology',
+    'CHEM': 'Chemistry',
+    'PHYS': 'Physics',
+    'ENGL': 'English',
+    'AHIST': 'Art History',
+    'ARTH': 'Art History',
+    'HS': 'Health Science',
+    'POLS': 'Political Science',
+    'UNIV': 'General Education',
+    'ED': 'Education',
+    'EDUC': 'Education'
+  },
+
+  getDepartmentName(courseCode = '', courseName = '') {
+    const combined = `${courseCode} ${courseName}`.trim();
+    const match = combined.match(/\b([A-Z]{2,6})\s*\d{3,5}\b/i);
+    const prefix = match ? match[1].toUpperCase() : '';
+    if (prefix && this.DEPARTMENT_MAP[prefix]) {
+      return this.DEPARTMENT_MAP[prefix];
+    }
+    if (/computer|software|programming|data structures|algorithms|operating systems|database/i.test(combined)) return 'Computer Science';
+    if (/math|calculus|algebra|statistics/i.test(combined)) return 'Mathematics';
+    if (/business|management|marketing|accounting|finance/i.test(combined)) return 'Business Administration';
+    if (/philosophy|ethics/i.test(combined)) return 'Philosophy';
+    if (/health|biology|anatomy/i.test(combined)) return 'Health Science';
+    if (/psychology/i.test(combined)) return 'Psychology';
+    if (/history|civilization/i.test(combined)) return 'History';
+    if (/english|literature|writing/i.test(combined)) return 'English';
+    return prefix || 'Computer Science';
+  },
+
+  parseCourseCodeAndTitle(rawName = '', rawCode = '') {
+    const cleaned = this.cleanCourseName(rawName) || rawCode || 'Course';
+    const m = cleaned.match(/^([A-Z]{2,6}\s*\d{3,5})(?:-\d+)?(?:\s*[:\-–—]\s*|\s+)(.*)$/i);
+    if (m) {
+      const code = m[1].trim().replace(/\s+/, ' ');
+      let title = m[2].trim().replace(/^[-_–—:\s]+/, '').trim();
+      title = title.replace(/\s*-\s*(?:AY\d{4}-T\d|Term\s*\d|20\d\d).*$/i, '').trim();
+      return { code, title: title || cleaned };
+    }
+    const codeMatch = cleaned.match(/\b([A-Z]{2,6}\s*\d{3,5})\b/i);
+    const code = codeMatch ? codeMatch[1].trim().replace(/\s+/, ' ') : (rawCode || '');
+    return { code: code || cleaned, title: cleaned };
+  },
+
+  async whoAmI() {
+    const apiVersions = ['1.47', '1.43', '1.30', '1.0'];
+    for (const ver of apiVersions) {
+      try {
+        const resp = await fetch(`/d2l/api/lp/${ver}/users/whoami`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (resp.ok) {
+          return await resp.json();
+        }
+      } catch (e) {}
+    }
+    return null;
+  },
+
+  async getStudentProfile() {
+    let fullName = '';
+    let initials = '';
+
+    try {
+      const user = await this.whoAmI();
+      if (user) {
+        // Brightspace Valence WhoAmIUser response object
+        fullName = (user.UniqueDisplayName || `${user.FirstName || ''} ${user.LastName || ''}`).trim();
+      }
+    } catch (e) {}
+
+    if (!fullName && typeof document !== 'undefined') {
+      const profileElem = document.querySelector('.d2l-navigation-s-personal-menu-wrapper, .d2l-navigation-s-header-menu-text, .vui-dropdown-menu-item, [aria-label*="Profile"], [aria-label*="Account"]');
+      if (profileElem && profileElem.textContent) {
+        fullName = profileElem.textContent.trim();
+      }
+    }
+
+    if (fullName) {
+      const parts = fullName.split(/\s+/).map(p => p.replace(/[^a-zA-Z]/g, '')).filter(Boolean);
+      if (parts.length > 0) {
+        initials = parts.map(p => p[0].toLowerCase()).join('');
+      }
+    }
+
+    if (!initials) {
+      initials = 'myk';
+    }
+
+    return {
+      fullName: fullName || 'Mohamed Yahia Khidr',
+      initials: initials
+    };
+  },
+
+  async getCourseInstructor(orgUnitId) {
+    if (!orgUnitId) return 'Instructor';
+
+    const cleanInstructorName = (raw) => {
+      if (!raw) return '';
+      let name = raw.trim();
+      // If "LastName, FirstName", reverse to "FirstName LastName"
+      if (name.includes(',') && !name.includes('\n')) {
+        const parts = name.split(',').map(s => s.trim());
+        if (parts.length >= 2 && parts[0] && parts[1]) {
+          name = `${parts[1]} ${parts[0]}`;
+        }
+      }
+      // Remove trailing roles, IDs, or brackets
+      name = name.replace(/\s*\(.*?\)\s*/g, ' ').trim();
+      name = name.replace(/\s*[-–—]\s*(?:Instructor|Faculty|Professor|Teacher|Primary).*$/i, '').trim();
+      name = name.replace(/^(?:Instructor|Faculty|Professor|Teacher):\s*/i, '').trim();
+      if (name.length >= 3 && name.length <= 60 && !/^(?:view|profile|email|message|instructor|faculty)$/i.test(name)) {
+        return name;
+      }
+      return '';
+    };
+
+    const apiVersions = ['1.54', '1.43', '1.30', '1.0'];
+
+    // 1. Try Brightspace Classlist REST API
+    for (const ver of apiVersions) {
+      try {
+        const resp = await fetch(`/d2l/api/le/${ver}/${orgUnitId}/classlist/`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (resp.ok) {
+          const users = await resp.json();
+          const userList = Array.isArray(users) ? users : (users.Objects || []);
+          const instructor = userList.find(u => {
+            const role = String(u.RoleName || u.Role || '').toLowerCase();
+            return (role.includes('instructor') || role.includes('faculty') || role.includes('teacher') || role.includes('professor') || role.includes('leader')) &&
+                   !role.includes('instructional design');
+          });
+          if (instructor) {
+            let candidate = '';
+            if (instructor.FirstName && instructor.LastName) {
+              candidate = `${instructor.FirstName} ${instructor.LastName}`.trim();
+            } else if (instructor.DisplayName) {
+              candidate = instructor.DisplayName.trim();
+            }
+            const cleaned = cleanInstructorName(candidate);
+            if (cleaned) return cleaned;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 2. Try Brightspace LMS Classlist HTML web page
+    try {
+      const clUrls = [
+        `/d2l/lms/classlist/classlist.d2l?ou=${orgUnitId}`,
+        `/d2l/lms/classlist/classlist.d2l?ou=${orgUnitId}&showRole=Instructor`
+      ];
+      for (const clUrl of clUrls) {
+        const clResp = await fetch(clUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        if (clResp.ok) {
+          const html = await clResp.text();
+          if (html && (html.includes('classlist') || html.includes('d2l-grid') || html.includes('d_g'))) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const rows = doc.querySelectorAll('tr, .d2l-grid-row, .d_gr');
+            for (const row of rows) {
+              const rText = row.textContent || '';
+              if (/instructor|faculty|professor|teacher/i.test(rText) && !/instructional\s*design/i.test(rText)) {
+                const nameLink = row.querySelector('a.d_gl, a[href*="profile"], a[href*="user"], a');
+                if (nameLink && nameLink.textContent) {
+                  const cleaned = cleanInstructorName(nameLink.textContent);
+                  if (cleaned) return cleaned;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 3. Fetch Course Homepage HTML and parse "Instructor Profile" / "Faculty" widget
+    try {
+      const homeResp = await fetch(`/d2l/home/${orgUnitId}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      if (homeResp.ok) {
+        const html = await homeResp.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        const widgets = doc.querySelectorAll('.d2l-widget, div[data-widget-id], div[role="region"], .d2l-box');
+        for (const w of widgets) {
+          const wText = w.textContent || '';
+          if (/instructor|faculty|meet your instructor|teacher/i.test(wText)) {
+            const m = wText.match(/(?:Instructor|Faculty|Professor|Teacher)(?:\s*Name)?\s*[:\-]\s*([A-Za-z\.\s'-]{3,50})/i);
+            if (m) {
+              const cleaned = cleanInstructorName(m[1]);
+              if (cleaned) return cleaned;
+            }
+            const m2 = wText.match(/(?:Dr\.|Prof\.|Professor)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/);
+            if (m2) {
+              const cleaned = cleanInstructorName(m2[0]);
+              if (cleaned) return cleaned;
+            }
+            const pLink = w.querySelector('a[href*="profile"], a[href*="email"], h3, h4');
+            if (pLink && pLink.textContent) {
+              const cleaned = cleanInstructorName(pLink.textContent);
+              if (cleaned) return cleaned;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 4. Try Announcements (News) REST API - match intro, author or signature
+    for (const ver of apiVersions) {
+      try {
+        const resp = await fetch(`/d2l/api/le/${ver}/${orgUnitId}/news/`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (resp.ok) {
+          const news = await resp.json();
+          const items = Array.isArray(news) ? news : (news.Objects || []);
+          for (const item of items) {
+            const titleOrBody = `${item.Title || ''} ${(item.Body && (item.Body.Text || item.Body.Html)) || ''}`;
+            const mIntro = titleOrBody.match(/(?:I am|I'm|My name is)\s+(?:your instructor,\s+)?(?:Dr\.|Prof\.|Professor)?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i);
+            if (mIntro) {
+              const cleaned = cleanInstructorName(mIntro[1]);
+              if (cleaned) return cleaned;
+            }
+            const mSig = titleOrBody.match(/(?:Sincerely|Best regards|Warm regards|Regards|Instructor|Professor),\s*[\r\n]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i);
+            if (mSig) {
+              const cleaned = cleanInstructorName(mSig[1]);
+              if (cleaned) return cleaned;
+            }
+            const m = titleOrBody.match(/(?:Instructor|Professor|Prof\.|Dr\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/);
+            if (m) {
+              const cleaned = cleanInstructorName(m[0]);
+              if (cleaned) return cleaned;
+            }
+            if (item.CreatedByUserName && !item.CreatedByUserName.toLowerCase().includes('admin')) {
+              const cleaned = cleanInstructorName(item.CreatedByUserName);
+              if (cleaned) return cleaned;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 5. Try Announcements LMS HTML Page
+    try {
+      const newsResp = await fetch(`/d2l/lms/news/main.d2l?ou=${orgUnitId}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      if (newsResp.ok) {
+        const newsHtml = await newsResp.text();
+        const mIntro = newsHtml.match(/(?:I am|I'm|My name is)\s+(?:your instructor,\s+)?(?:Dr\.|Prof\.|Professor)?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i);
+        if (mIntro) {
+          const cleaned = cleanInstructorName(mIntro[1]);
+          if (cleaned) return cleaned;
+        }
+        const mSig = newsHtml.match(/(?:Sincerely|Best regards|Warm regards|Regards|Instructor|Professor),\s*[\r\n<br\s\/>]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i);
+        if (mSig) {
+          const cleaned = cleanInstructorName(mSig[1]);
+          if (cleaned) return cleaned;
+        }
+        const m = newsHtml.match(/(?:Instructor|Professor|Prof\.|Dr\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/);
+        if (m) {
+          const cleaned = cleanInstructorName(m[0]);
+          if (cleaned) return cleaned;
+        }
+      }
+    } catch (e) {}
+
+    // 6. Current page DOM inspection fallback
+    if (typeof document !== 'undefined') {
+      const allWidgets = document.querySelectorAll('.d2l-widget, .instructor-name, .faculty-name, div[role="region"]');
+      for (const elem of allWidgets) {
+        const text = elem.textContent || '';
+        if (/instructor|faculty|meet your instructor|teacher/i.test(text)) {
+          const m = text.match(/(?:Instructor|Faculty|Professor|Teacher)(?:\s*Name)?\s*[:\-]\s*([A-Za-z\.\s'-]{3,50})/i);
+          if (m) {
+            const cleaned = cleanInstructorName(m[1]);
+            if (cleaned) return cleaned;
+          }
+          const m2 = text.match(/(?:Dr\.|Prof\.|Professor)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/);
+          if (m2) {
+            const cleaned = cleanInstructorName(m2[0]);
+            if (cleaned) return cleaned;
+          }
+        }
+      }
+    }
+
+    return 'Instructor';
+  },
+
+  formatDueDate(isoString) {
+    if (!isoString) return '';
+    try {
+      const d = new Date(isoString);
+      if (!isNaN(d.getTime())) {
+        try {
+          return d.toLocaleDateString('en-US', {
+            timeZone: 'America/New_York',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+        } catch (tzErr) {
+          return d.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+        }
+      }
+    } catch (e) {}
+    return '';
+  },
+
+  buildCourseMetadata(courseInfo, dropboxFolders = [], studentProfile = null, instructorName = 'Instructor') {
+    const rawName = courseInfo?.name || '';
+    const rawCode = courseInfo?.code || '';
+    const { code, title } = this.parseCourseCodeAndTitle(rawName, rawCode);
+    const department = this.getDepartmentName(code, title);
+    const student = studentProfile || { fullName: 'Mohamed Yahia Khidr', initials: 'myk' };
+    const initials = student.initials || 'myk';
+
+    const assignments = {};
+    for (let u = 1; u <= 8; u++) {
+      let matchedFolder = null;
+      if (Array.isArray(dropboxFolders)) {
+        const unitRegex = new RegExp(`(?:unit|week)\\s*0?${u}(?!\\d)`, 'i');
+        matchedFolder = dropboxFolders.find(f => {
+          const fName = String(f.Name || '').toLowerCase();
+          return unitRegex.test(fName);
+        });
+      }
+
+      let formattedDate = '';
+      let rawDate = null;
+      if (matchedFolder && matchedFolder.DueDate) {
+        rawDate = matchedFolder.DueDate;
+        formattedDate = this.formatDueDate(rawDate);
+      }
+
+      assignments[String(u)] = {
+        unit: u,
+        title: `Unit ${u} Assignment Activity`,
+        dueDate: formattedDate,
+        rawDueDate: rawDate,
+        templateFileName: `week${u}_assignment_${initials}_template.docx`
+      };
+    }
+
+    return {
+      courseId: String(courseInfo?.id || ''),
+      courseCode: code,
+      courseName: title,
+      department: department,
+      departmentLine: `Department of ${department}, University of The People`,
+      courseLine: `${code}: ${title}`,
+      instructor: instructorName || 'Instructor',
+      student: student,
+      assignments: assignments,
+      exportedAt: new Date().toISOString()
+    };
   }
 };
 

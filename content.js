@@ -102,6 +102,20 @@
       return true;
     }
 
+    if (request.action === 'BATCH_MARK_PROGRESS') {
+      const title = `[Course ${request.courseIndex}/${request.totalCourses}] ${request.currentCourseName || 'Auto-Marking'}`;
+      showCompletionToast(title, request.current || 0, request.total || 100, request.percent, request.status, false);
+      return false;
+    }
+
+    if (request.action === 'BATCH_COURSES_COMPLETED') {
+      isBatchMarkingInProgress = false;
+      const count = request.completedCourses || request.totalCourses;
+      const summary = `Done! Completed ${count} attending course${count > 1 ? 's' : ''} (${request.totalTopics || 0} topics marked).`;
+      showCompletionToast('All Enrolled Courses Completed', count, request.totalCourses, 100, summary, true);
+      return false;
+    }
+
     if (request.action === 'COURSE_MARK_PROGRESS') {
       const currentOu = detectOrgUnitId();
       if (currentOu && String(request.orgUnitId) === String(currentOu)) {
@@ -266,7 +280,7 @@
         const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope, downloadAssets);
         zipFiles.push(...markdownFiles);
 
-        // Fetch attachment files & embedded PDFs if enabled
+        // Fetch attachment files & embedded PDFs if enabled into per-unit folders
         if (downloadAssets) {
           const downloadedCache = new Map(); // url -> Uint8Array
           let totalAttachments = 0;
@@ -298,7 +312,6 @@
                       });
 
                       if (result && result.success && result.base64) {
-                        // Decode base64 back to Uint8Array
                         const binaryStr = atob(result.base64);
                         bytes = new Uint8Array(binaryStr.length);
                         for (let i = 0; i < binaryStr.length; i++) {
@@ -319,6 +332,85 @@
                       content: bytes
                     });
                     console.log(`Packed asset: ${unitFolderName}/assets/${cleanFileName} (${bytes.length} bytes)`);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } else if (exportFormat === 'combined') {
+        emitProgress(72, 'Generating Markdown documents & offline interactive website...');
+        // 1. Build structured Markdown documentation archive
+        const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope, downloadAssets);
+        zipFiles.push(...markdownFiles);
+
+        // 2. Build single-page interactive HTML application with per-unit asset links
+        const htmlContent = HTMLBuilder.buildOfflineSite({
+          courseInfo: courseInfo,
+          units: units,
+          exportedAt: exportedAt,
+          exportScope: exportScope,
+          downloadAssets: downloadAssets,
+          perUnitAssets: true
+        });
+
+        zipFiles.push({
+          name: 'index.html',
+          content: htmlContent
+        });
+
+        // 3. Fetch attachments and store them strictly inside each unit folder (NO global assets folder)
+        if (downloadAssets) {
+          const downloadedCache = new Map(); // url -> Uint8Array
+          let totalAttachments = 0;
+          units.forEach(u => totalAttachments += (u.attachments ? u.attachments.length : 0));
+          let currentAttachmentIdx = 0;
+
+          for (let unitIdx = 0; unitIdx < units.length; unitIdx++) {
+            const unit = units[unitIdx];
+            const unitFolderName = `${String(unitIdx + 1).padStart(2, '0')}_${MarkdownBuilder.sanitizeFolderName(unit.title)}`;
+
+            if (unit.attachments && unit.attachments.length > 0) {
+              for (const att of unit.attachments) {
+                if (att.url) {
+                  currentAttachmentIdx++;
+                  const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
+                  emitProgress(
+                    75 + Math.round((currentAttachmentIdx / Math.max(totalAttachments, 1)) * 17),
+                    `Downloading asset (${currentAttachmentIdx}/${totalAttachments}): ${cleanFileName}`
+                  );
+
+                  let bytes = downloadedCache.get(att.url);
+                  if (!bytes) {
+                    try {
+                      const result = await new Promise((resolve) => {
+                        chrome.runtime.sendMessage(
+                          { action: 'FETCH_FILE', url: att.url },
+                          (response) => resolve(response)
+                        );
+                      });
+
+                      if (result && result.success && result.base64) {
+                        const binaryStr = atob(result.base64);
+                        bytes = new Uint8Array(binaryStr.length);
+                        for (let i = 0; i < binaryStr.length; i++) {
+                          bytes[i] = binaryStr.charCodeAt(i);
+                        }
+                        downloadedCache.set(att.url, bytes);
+                      } else {
+                        console.warn(`Background fetch failed for ${att.url}:`, result?.error);
+                      }
+                    } catch (e) {
+                      console.warn(`Could not download attachment ${att.url}:`, e);
+                    }
+                  }
+
+                  if (bytes) {
+                    zipFiles.push({
+                      name: `${unitFolderName}/assets/${cleanFileName}`,
+                      content: bytes
+                    });
+                    console.log(`Packed combined asset: ${unitFolderName}/assets/${cleanFileName} (${bytes.length} bytes)`);
                   }
                 }
               }
@@ -397,11 +489,29 @@
         }
       }
 
+      emitProgress(91, 'Generating course metadata manifest...');
+      try {
+        const [studentProfile, instructorName] = await Promise.all([
+          D2LApi.getStudentProfile().catch(() => ({ fullName: '', initials: 'myk' })),
+          D2LApi.getCourseInstructor(orgUnitId).catch(() => 'Instructor')
+        ]);
+        const courseMetadata = D2LApi.buildCourseMetadata(courseInfo, dropboxFolders, studentProfile, instructorName);
+        zipFiles.push({
+          name: 'course_metadata.json',
+          content: JSON.stringify(courseMetadata, null, 2)
+        });
+        console.log('[Course Exporter] Packed course_metadata.json into package:', courseMetadata);
+      } catch (me) {
+        console.warn('[Course Exporter] Could not build course_metadata.json:', me);
+      }
+
       emitProgress(93, 'Compressing package into ZIP archive...');
       const zipBlob = await ZipBuilder.createZip(zipFiles);
 
       const downloadSuffix = exportFormat === 'markdown'
         ? (exportScope === 'shareable' ? 'StudyGuide_Markdown' : 'Markdown_Offline')
+        : exportFormat === 'combined'
+        ? (exportScope === 'shareable' ? 'StudyGuide_Complete' : 'Offline')
         : (exportScope === 'shareable' ? 'StudyGuide_Offline' : 'Offline');
 
       emitProgress(98, 'Packaging complete! Sending to downloads...');
@@ -603,32 +713,212 @@
     }
   }
 
-  async function checkAndAutoMarkCourse() {
-    const orgUnitId = detectOrgUnitId();
-    if (!orgUnitId) return;
+  let isBatchMarkingInProgress = false;
+
+  async function checkAndAutoMarkAllCourses() {
+    // Skip if on login or authentication screens
+    const pathname = (window.location.pathname || '').toLowerCase();
+    if (pathname.includes('/d2l/login') || pathname.includes('/d2l/lp/auth')) {
+      return;
+    }
 
     try {
       const storage = await new Promise(r => chrome.storage.local.get(['autoMarkCompleted', 'markedCourses'], r));
-      // Feature is OFF by default
+      // Feature is OFF by default unless enabled in onboarding or settings
       if (!storage || storage.autoMarkCompleted !== true) {
         return;
       }
 
+      if (isBatchMarkingInProgress) {
+        return;
+      }
+
       const markedCourses = storage.markedCourses || {};
-      if (markedCourses[orgUnitId] || markedCourses[String(orgUnitId)]) {
-        const record = markedCourses[orgUnitId] || markedCourses[String(orgUnitId)];
-        console.log(`[Course Exporter] Course ${orgUnitId} already marked as completed (on ${record.markedAt}). Skipping re-marking.`);
+
+      // 1. Discover all attending courses
+      let enrolled = await D2LApi.getEnrolledCourses().catch(err => {
+        console.warn('[Course Exporter] Failed to get enrolled courses:', err);
+        return [];
+      });
+
+      // 2. If no courses returned but currently inside a specific course, fallback to current course
+      const currentOu = detectOrgUnitId();
+      if (currentOu && !enrolled.some(c => String(c.id || c.orgUnitId) === String(currentOu))) {
+        const info = await D2LApi.getCourseInfo(currentOu).catch(() => ({ id: currentOu, name: `Course ${currentOu}` }));
+        enrolled.push({
+          id: String(currentOu),
+          orgUnitId: String(currentOu),
+          name: info.name || `Course ${currentOu}`
+        });
+      }
+
+      if (enrolled.length === 0) {
         return;
       }
 
-      if (markingInProgress.has(String(orgUnitId))) {
+      // 3. Filter down to unmarked courses
+      const unmarkedCourses = enrolled.filter(c => {
+        const idStr = String(c.id || c.orgUnitId);
+        return !markedCourses[idStr] && !markingInProgress.has(idStr);
+      });
+
+      if (unmarkedCourses.length === 0) {
+        console.log(`[Course Exporter] All ${enrolled.length} attending course(s) are already marked completed. Skipping.`);
         return;
       }
 
-      console.log(`[Course Exporter] Auto-mark is ENABLED and course ${orgUnitId} is not marked. Triggering completion...`);
-      await triggerCourseCompletion(orgUnitId, true);
+      console.log(`[Course Exporter] Auto-mark active: Discovered ${enrolled.length} enrolled courses (${unmarkedCourses.length} unmarked). Launching batch auto-mark...`);
+
+      isBatchMarkingInProgress = true;
+      unmarkedCourses.forEach(c => markingInProgress.add(String(c.id || c.orgUnitId)));
+
+      showCompletionToast(
+        'Auto-Marking Enrolled Courses',
+        0,
+        unmarkedCourses.length,
+        5,
+        `Found ${unmarkedCourses.length} attending course(s) to complete...`
+      );
+
+      chrome.runtime.sendMessage({
+        action: 'START_BATCH_COURSE_COMPLETION',
+        courses: unmarkedCourses.map(c => ({
+          orgUnitId: String(c.id || c.orgUnitId),
+          courseName: c.name
+        }))
+      }, (response) => {
+        if (chrome.runtime.lastError || (response && !response.success)) {
+          isBatchMarkingInProgress = false;
+          unmarkedCourses.forEach(c => markingInProgress.delete(String(c.id || c.orgUnitId)));
+        }
+      });
+
     } catch (e) {
-      console.warn('[Course Exporter] checkAndAutoMarkCourse error:', e);
+      console.warn('[Course Exporter] checkAndAutoMarkAllCourses error:', e);
+      isBatchMarkingInProgress = false;
+    }
+  }
+
+  /* ==========================================================================
+     Auto-Download All Courses Data ZIPs Engine (Term Start)
+     ========================================================================== */
+  let isBatchDownloadingInProgress = false;
+  const downloadingCourses = new Set();
+
+  async function checkAndAutoDownloadAllCourses() {
+    const pathname = (window.location.pathname || '').toLowerCase();
+    if (pathname.includes('/d2l/login') || pathname.includes('/d2l/lp/auth')) {
+      return;
+    }
+
+    try {
+      const storage = await new Promise(r => chrome.storage.local.get([
+        'autoDownloadCourses',
+        'downloadedCourses',
+        'optDownloadAssets'
+      ], r));
+
+      if (!storage || storage.autoDownloadCourses !== true) {
+        return;
+      }
+
+      if (isBatchDownloadingInProgress) {
+        return;
+      }
+
+      const downloadedCourses = storage.downloadedCourses || {};
+
+      let enrolled = await D2LApi.getEnrolledCourses().catch(err => {
+        console.warn('[Course Exporter] Auto-download: Failed to get enrolled courses:', err);
+        return [];
+      });
+
+      const currentOu = detectOrgUnitId();
+      if (currentOu && !enrolled.some(c => String(c.id || c.orgUnitId) === String(currentOu))) {
+        const info = await D2LApi.getCourseInfo(currentOu).catch(() => ({ id: currentOu, name: `Course ${currentOu}` }));
+        enrolled.push({
+          id: String(currentOu),
+          orgUnitId: String(currentOu),
+          name: info.name || `Course ${currentOu}`
+        });
+      }
+
+      if (enrolled.length === 0) {
+        return;
+      }
+
+      const undownloadedCourses = enrolled.filter(c => {
+        const idStr = String(c.id || c.orgUnitId);
+        return !downloadedCourses[idStr] && !downloadingCourses.has(idStr);
+      });
+
+      if (undownloadedCourses.length === 0) {
+        return;
+      }
+
+      console.log(`[Course Exporter] Auto-download active: Found ${undownloadedCourses.length} undownloaded course(s). Starting sequential download...`);
+      isBatchDownloadingInProgress = true;
+      undownloadedCourses.forEach(c => downloadingCourses.add(String(c.id || c.orgUnitId)));
+
+      const downloadAssets = storage.optDownloadAssets !== false;
+      const exportFormat = 'combined'; // Combined interactive HTML + Markdown archive
+
+      showCompletionToast(
+        'Term Start Auto-Download',
+        0,
+        undownloadedCourses.length,
+        5,
+        `Auto-downloading ${undownloadedCourses.length} course package(s) in combined format...`
+      );
+
+      for (let i = 0; i < undownloadedCourses.length; i++) {
+        const course = undownloadedCourses[i];
+        const ouId = String(course.id || course.orgUnitId);
+        showCompletionToast(
+          course.name,
+          i + 1,
+          undownloadedCourses.length,
+          Math.round((i / Math.max(undownloadedCourses.length, 1)) * 100),
+          `Exporting package ${i + 1} of ${undownloadedCourses.length}: ${course.name}...`
+        );
+
+        try {
+          await new Promise((resolve) => {
+            runExportPipeline(ouId, downloadAssets, exportFormat, 'full', (res) => {
+              resolve(res);
+            });
+          });
+
+          const freshStorage = await new Promise(r => chrome.storage.local.get(['downloadedCourses'], r));
+          const updated = freshStorage.downloadedCourses || {};
+          updated[ouId] = {
+            downloadedAt: new Date().toISOString(),
+            courseName: course.name,
+            format: exportFormat
+          };
+          await new Promise(r => chrome.storage.local.set({ downloadedCourses: updated }, r));
+          console.log(`[Course Exporter] Auto-download finished for course ${course.name} (${ouId})`);
+        } catch (ce) {
+          console.error(`[Course Exporter] Auto-download failed for course ${course.name}:`, ce);
+        } finally {
+          downloadingCourses.delete(ouId);
+        }
+      }
+
+      showCompletionToast(
+        'All Courses Downloaded',
+        undownloadedCourses.length,
+        undownloadedCourses.length,
+        100,
+        `Successfully downloaded all ${undownloadedCourses.length} course packages!`,
+        true
+      );
+
+      isBatchDownloadingInProgress = false;
+
+    } catch (e) {
+      console.warn('[Course Exporter] checkAndAutoDownloadAllCourses error:', e);
+      isBatchDownloadingInProgress = false;
     }
   }
 
@@ -636,12 +926,21 @@
   function debouncedAutoMark(delay = 800) {
     if (autoMarkDebounceTimer) clearTimeout(autoMarkDebounceTimer);
     autoMarkDebounceTimer = setTimeout(() => {
-      checkAndAutoMarkCourse();
+      checkAndAutoMarkAllCourses();
     }, delay);
   }
 
-  // Initialize auto-mark check on document idle
+  let autoDownloadDebounceTimer = null;
+  function debouncedAutoDownload(delay = 2000) {
+    if (autoDownloadDebounceTimer) clearTimeout(autoDownloadDebounceTimer);
+    autoDownloadDebounceTimer = setTimeout(() => {
+      checkAndAutoDownloadAllCourses();
+    }, delay);
+  }
+
+  // Initialize checks on document idle
   debouncedAutoMark(1200);
+  debouncedAutoDownload(2200);
 
   // Synchronize when settings or flags are changed in options page or popup
   if (chrome.storage && chrome.storage.onChanged) {
@@ -651,13 +950,13 @@
           debouncedAutoMark(300);
         }
         if (changes.markedCourses) {
-          const currentOu = detectOrgUnitId();
-          if (currentOu) {
-            const newMarked = changes.markedCourses.newValue || {};
-            if (!newMarked[currentOu] && !newMarked[String(currentOu)]) {
-              debouncedAutoMark(400);
-            }
-          }
+          debouncedAutoMark(400);
+        }
+        if (changes.autoDownloadCourses && changes.autoDownloadCourses.newValue === true) {
+          debouncedAutoDownload(400);
+        }
+        if (changes.downloadedCourses) {
+          debouncedAutoDownload(600);
         }
       }
     });
@@ -669,6 +968,7 @@
     if (window.location.href !== lastObservedUrl) {
       lastObservedUrl = window.location.href;
       debouncedAutoMark(800);
+      debouncedAutoDownload(2000);
     }
   };
 

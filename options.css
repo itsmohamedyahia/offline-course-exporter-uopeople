@@ -640,6 +640,37 @@ input:checked + .slider:before {
   gap: 16px;
 }
 
+.setting-item.vertical-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.input-with-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.text-input {
+  background: var(--bg-input, rgba(15, 23, 42, 0.7));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  flex-grow: 1;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.text-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px rgba(231, 79, 115, 0.2);
+}
+
 .setting-info {
   display: flex;
   flex-direction: column;
