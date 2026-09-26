@@ -431,7 +431,21 @@ const D2LApi = {
       ) || doc.body;
 
       if (contentElem) {
-        return this.processHtmlContent(contentElem.innerHTML, targetUrl, discoveredAttachments, downloadAssets);
+        let contentHtml = this.processHtmlContent(contentElem.innerHTML, targetUrl, discoveredAttachments, downloadAssets);
+
+        // Check if document contains a rubric component
+        const domRubric = doc.querySelector('d2l-rubric, .d2l-rubric-table, table.d_g, table[id*="rubric"]');
+        if (domRubric) {
+          const parsed = this.extractRubricFromDOM(domRubric);
+          if (parsed) {
+            const rubricHtml = this.buildRubricHtml(parsed);
+            if (rubricHtml && !contentHtml.includes('rubric-container')) {
+              contentHtml += '\n' + rubricHtml;
+            }
+          }
+        }
+
+        return contentHtml;
       }
       return '';
     } catch (e) {
@@ -519,10 +533,10 @@ const D2LApi = {
   // Fetch rubrics associated with a specific object (Dropbox or Discussion)
   async getRubricsForActivity(orgUnitId, objectType, objectId) {
     if (!orgUnitId || !objectType || !objectId) return [];
-    const apiVersions = ['1.54', '1.43', '1.30', '1.0'];
+    const apiVersions = ['1.97', '1.67', '1.61', '1.54', '1.43', '1.30', '1.0'];
     for (const ver of apiVersions) {
       try {
-        const resp = await fetch(`/d2l/api/le/${ver}/${orgUnitId}/rubrics?objectType=${encodeURIComponent(objectType)}&objectId=${encodeURIComponent(objectId)}`, {
+        const resp = await fetch(`/d2l/api/le/${ver}/${orgUnitId}/rubrics/?objectType=${encodeURIComponent(objectType)}&objectId=${encodeURIComponent(objectId)}`, {
           headers: { 'X-Requested-With': 'XMLHttpRequest' }
         });
         if (resp.ok) {
@@ -539,7 +553,7 @@ const D2LApi = {
   // Fetch individual rubric details with multi-version & LMS fallback
   async getRubricDetails(orgUnitId, rubricId) {
     if (!rubricId) return null;
-    const apiVersions = ['1.54', '1.43', '1.30', '1.0'];
+    const apiVersions = ['1.97', '1.67', '1.61', '1.54', '1.43', '1.30', '1.0'];
     for (const ver of apiVersions) {
       try {
         const resp = await fetch(`/d2l/api/le/${ver}/${orgUnitId}/rubrics/${rubricId}`, {
@@ -560,8 +574,121 @@ const D2LApi = {
     return await this.fetchLmsRubricFallback(orgUnitId, rubricId);
   },
 
+  // Extracts rubric data from a <d2l-rubric> custom element or traditional LMS table
+  extractRubricFromDOM(rubricElemOrDoc) {
+    if (!rubricElemOrDoc) return null;
+    try {
+      const root = (typeof rubricElemOrDoc.querySelector === 'function') ? rubricElemOrDoc : null;
+      if (!root) return null;
+
+      const rubricElem = root.querySelector('d2l-rubric, .d2l-rubric-table, table.d_g, table[id*="rubric"]') || root;
+      const rows = rubricElem.querySelectorAll('.d2l-rubric-criterion-row, tr.d2l-rubric-criterion');
+
+      if (rows && rows.length > 0) {
+        const titleElem = root.querySelector('.rubric-title, .d2l-rubric-title, .d2l-heading, .d2l-page-title, h1, h2, h3');
+        const rubricName = titleElem ? titleElem.textContent.trim() : (rubricElem.getAttribute('data-group-name') || rubricElem.getAttribute('name') || 'Evaluation Rubric');
+
+        const levelMap = new Map();
+        const headerLevelElems = rubricElem.querySelectorAll('.d2l-rubric-level-header, th.d2l-rubric-level, .d2l-rubric-level');
+        if (headerLevelElems && headerLevelElems.length > 0) {
+          headerLevelElems.forEach((lvlEl, idx) => {
+            const lvlNameEl = lvlEl.querySelector('.rubric-level-name, .level-name');
+            const lvlName = lvlNameEl ? lvlNameEl.textContent.trim() : lvlEl.textContent.trim();
+            const ptsEl = lvlEl.querySelector('.rubric-level-points, .level-points');
+            const pts = ptsEl ? parseFloat(ptsEl.textContent.replace(/[^0-9.]/g, '') || '0') : null;
+            const lvlId = lvlEl.getAttribute('data-level-id') || lvlEl.getAttribute('id') || `lvl_${idx + 1}`;
+            levelMap.set(lvlId, { Id: lvlId, Name: lvlName, Points: pts });
+          });
+        }
+
+        const criteria = [];
+        let critIdx = 1;
+
+        for (const row of rows) {
+          const critTitleElem = row.querySelector('.criterion-title, .criterion-name, th');
+          const rawTitle = critTitleElem ? critTitleElem.textContent.trim() : `Criterion ${critIdx}`;
+          const cleanTitle = rawTitle.replace(/\s*\(\d+(?:\.\d+)?\s*(?:pts|points|درجات?)\)/gi, '').trim();
+
+          const cells = row.querySelectorAll('d2l-rubric-criterion-cell, td.d2l-rubric-criterion-cell');
+          let maxPts = 0;
+          const critCells = [];
+
+          cells.forEach((cell, cellIdx) => {
+            const pts = parseFloat(cell.getAttribute('data-points') || cell.getAttribute('points') || '0');
+            if (pts > maxPts) maxPts = pts;
+
+            const lvlName = cell.getAttribute('data-level-name') || cell.getAttribute('name') || '';
+            const lvlId = cell.getAttribute('data-level-id') || `lvl_${cellIdx + 1}`;
+
+            if (!levelMap.has(lvlId) && lvlName) {
+              levelMap.set(lvlId, { Id: lvlId, Name: lvlName, Points: pts });
+            }
+
+            const descElem = cell.querySelector('d2l-html-block, .criterion-cell-description, .description, .cell-container') || cell;
+            const desc = descElem ? descElem.textContent.trim().replace(/\s+/g, ' ') : '';
+
+            critCells.push({
+              Id: cellIdx + 1,
+              LevelId: lvlId,
+              Points: pts,
+              Description: { Text: desc, Html: `<p>${desc}</p>` }
+            });
+          });
+
+          const outOfMatch = rawTitle.match(/\((\d+(?:\.\d+)?)\s*(?:pts|points|درجات?)\)/i);
+          const outOf = outOfMatch ? parseFloat(outOfMatch[1]) : (maxPts > 0 ? maxPts : null);
+
+          criteria.push({
+            Id: critIdx,
+            Name: cleanTitle || `Criterion ${critIdx}`,
+            Outof: outOf,
+            Cells: critCells
+          });
+
+          critIdx++;
+        }
+
+        const levels = Array.from(levelMap.values());
+        if (levels.length === 0) {
+          const cellCount = criteria[0] && criteria[0].Cells ? criteria[0].Cells.length : 4;
+          for (let i = 0; i < cellCount; i++) {
+            levels.push({ Id: `lvl_${i + 1}`, Name: `Level ${cellCount - i}`, Points: null });
+          }
+        }
+
+        return {
+          Name: rubricName,
+          CriteriaGroups: [{
+            Id: 1,
+            Name: 'Default Criteria Group',
+            Levels: levels,
+            Criteria: criteria
+          }],
+          isRawHtml: false
+        };
+      }
+
+      // Check for standard HTML table
+      const table = root.querySelector('table');
+      if (table) {
+        const titleElem = root.querySelector('.rubric-title, h1, h2, h3, .d2l-page-title');
+        const rubricName = titleElem ? titleElem.textContent.trim() : 'Evaluation Rubric';
+        return {
+          Name: rubricName,
+          isRawHtml: true,
+          rawTableHtml: table.outerHTML
+        };
+      }
+
+      return null;
+    } catch (e) {
+      console.warn('Error in extractRubricFromDOM:', e);
+      return null;
+    }
+  },
+
   // Scrapes LMS HTML rubric view when Valence REST API is restricted for student role
-  async fetchLmsRubricFallback(orgUnitId, rubricId, dropboxId = null) {
+  async fetchLmsRubricFallback(orgUnitId, rubricId, dropboxId = null, topicId = null) {
     const urlsToTry = [];
     if (rubricId) {
       urlsToTry.push(`/d2l/lms/rubrics/rubric_view.d2l?ou=${orgUnitId}&rubricId=${rubricId}`);
@@ -571,6 +698,11 @@ const D2LApi = {
     if (dropboxId) {
       urlsToTry.push(`/d2l/lms/dropbox/user/view_rubric.d2l?ou=${orgUnitId}&db=${dropboxId}`);
       urlsToTry.push(`/d2l/lms/dropbox/user/folder_submit_files.d2l?ou=${orgUnitId}&db=${dropboxId}`);
+    }
+    if (topicId) {
+      urlsToTry.push(`/d2l/lms/discussions/user/view_rubric.d2l?ou=${orgUnitId}&t=${topicId}`);
+      urlsToTry.push(`/d2l/lms/discussions/user/view_rubric.d2l?ou=${orgUnitId}&topicId=${topicId}`);
+      urlsToTry.push(`/d2l/lms/discussions/admin/assess_topic_user.d2l?ou=${orgUnitId}&topicId=${topicId}`);
     }
 
     for (const url of urlsToTry) {
@@ -583,17 +715,10 @@ const D2LApi = {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
         
-        // Find rubric table in the parsed document
-        const table = doc.querySelector('.d2l-rubric-table, table.d_g, table[id*="rubric"], .dco_c table, d2l-rubric');
-        if (table) {
-          const rubricNameElem = doc.querySelector('.d2l-page-title, .d2l-heading, h1, h2, .rubric-title');
-          const rubricName = rubricNameElem ? rubricNameElem.textContent.trim() : 'Evaluation Rubric';
-          return {
-            RubricId: rubricId,
-            Name: rubricName,
-            isRawHtml: true,
-            rawTableHtml: table.outerHTML
-          };
+        const parsed = this.extractRubricFromDOM(doc);
+        if (parsed) {
+          if (rubricId && !parsed.RubricId) parsed.RubricId = rubricId;
+          return parsed;
         }
       } catch (e) {
         console.warn(`Failed LMS rubric fallback on ${url}:`, e);
@@ -1264,11 +1389,22 @@ const D2LApi = {
   // Clean a name for robust matching (e.g. written assignment unit 1 vs assignment activity unit 1)
   cleanNameForMatching(name) {
     if (!name) return '';
-    return name.toLowerCase()
+    return String(name)
+      .replace(/[\u064B-\u065F\u0670]/g, '') // Strip Arabic tashkeel (diacritics)
+      .replace(/[إأآا]/g, 'ا')              // Normalize Arabic alif forms
+      .replace(/ة/g, 'ه')                    // Normalize taa marbuta
+      .replace(/ى/g, 'ي')                    // Normalize alif maqsura
+      .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]) // Normalize Arabic-Indic digits
+      .replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]) // Normalize Eastern Arabic digits
+      .toLowerCase()
       .replace(/written assignment/g, 'assignment')
       .replace(/assignment activity/g, 'assignment')
       .replace(/discussion forum/g, 'discussion')
-      .replace(/[^a-z0-9]/g, '')
+      .replace(/منتدى المناقشة/g, 'discussion')
+      .replace(/منتدى مناقشة/g, 'discussion')
+      .replace(/واجب كتابي/g, 'assignment')
+      .replace(/نشاط الواجب/g, 'assignment')
+      .replace(/[^\p{L}\p{N}]/gu, '')
       .trim();
   },
 
@@ -1308,11 +1444,29 @@ const D2LApi = {
     return Array.from(ids);
   },
 
-  // Find associated rubric by checking explicit ids or fall back to name matching
-  findRubricForActivity(activityName, rubricIds, rubricsMap) {
+  // Find associated rubric by checking explicit activity keys, ids, or falling back to name matching
+  findRubricForActivity(activityName, rubricIds, rubricsMap, activityId = null, activityType = null) {
+    if (!rubricsMap) return null;
+
+    const resolveDetailed = (r) => {
+      if (!r) return null;
+      const rid = r.RubricId || r.Id;
+      if (rid && rubricsMap[rid] && rubricsMap[rid].CriteriaGroups && rubricsMap[rid].CriteriaGroups.length > 0) {
+        return rubricsMap[rid];
+      }
+      return r;
+    };
+
+    if (activityType && activityId) {
+      const typeKey = `${String(activityType).toLowerCase()}_${activityId}`;
+      if (rubricsMap[typeKey]) return resolveDetailed(rubricsMap[typeKey]);
+    }
+    if (activityId && rubricsMap[activityId]) {
+      return resolveDetailed(rubricsMap[activityId]);
+    }
     if (rubricIds && rubricIds.length > 0) {
       for (const rid of rubricIds) {
-        if (rubricsMap[rid]) return rubricsMap[rid];
+        if (rubricsMap[rid]) return resolveDetailed(rubricsMap[rid]);
       }
     }
     const cleanActName = this.cleanNameForMatching(activityName);
@@ -1320,8 +1474,8 @@ const D2LApi = {
       const rubric = rubricsMap[rid];
       if (!rubric) continue;
       const cleanRubName = this.cleanNameForMatching(rubric.Name);
-      if (cleanRubName.includes(cleanActName) || cleanActName.includes(cleanRubName.replace('rubric', '')) || cleanActName.includes(cleanRubName)) {
-        return rubric;
+      if (cleanRubName && cleanActName && (cleanRubName.includes(cleanActName) || cleanActName.includes(cleanRubName.replace('rubric', '')) || cleanActName.includes(cleanRubName))) {
+        return resolveDetailed(rubric);
       }
     }
     return null;
@@ -1398,18 +1552,30 @@ const D2LApi = {
           html += `</td>`;
 
           // Cell for each level
-          const critLevels = crit.Levels || [];
+          const critLevels = crit.Cells || crit.Levels || [];
           for (let i = 0; i < levels.length; i++) {
             const lvl = levels[i];
-            const cell = critLevels.find(cl => cl.LevelId === lvl.LevelId) || critLevels[i] || {};
-            const desc = cell.Description ? (cell.Description.Html || cell.Description.Text || '') : (cell.Feedback ? (cell.Feedback.Html || cell.Feedback.Text || '') : '');
-            const pts = cell.Points !== undefined ? cell.Points : (cell.Value !== undefined ? cell.Value : null);
+            const targetLvlId = (lvl.Id !== undefined && lvl.Id !== null) ? lvl.Id : lvl.LevelId;
+            const cell = critLevels.find(cl => {
+              const clId = (cl.LevelId !== undefined && cl.LevelId !== null) ? cl.LevelId : cl.Id;
+              return String(clId) === String(targetLvlId);
+            }) || critLevels[i] || {};
+
+            let desc = '';
+            if (cell.Description) {
+              desc = (typeof cell.Description === 'object') ? (cell.Description.Html || cell.Description.Text || '') : String(cell.Description);
+            } else if (cell.Feedback) {
+              desc = (typeof cell.Feedback === 'object') ? (cell.Feedback.Html || cell.Feedback.Text || '') : String(cell.Feedback);
+            }
+            const pts = (cell.Points !== undefined && cell.Points !== null)
+              ? cell.Points
+              : (cell.Value !== undefined ? cell.Value : ((lvl.Points !== undefined) ? lvl.Points : null));
             
             html += `<td class="rubric-cell-level">`;
             if (pts !== null && pts !== undefined) {
               html += `<div class="rubric-cell-points">${pts} pts</div>`;
             }
-            html += `<div class="rubric-cell-desc">${desc || '<span style="color: var(--text-muted);">—</span>'}</div>`;
+            html += `<div class="rubric-cell-desc">${desc || '<span style="color: var(--text-muted);">-</span>'}</div>`;
             html += `</td>`;
           }
           html += `</tr>`;
@@ -1677,9 +1843,9 @@ const D2LApi = {
             // Match discussion topic
             let matchedDiscussion = null;
             const topicIdMatch = topicUrl.match(/[?&]id=(\d+)/i) || topicUrl.match(/[?&]tid=(\d+)/i) || topicUrl.match(/[?&]topicId=(\d+)/i);
-            if (topicIdMatch) {
-              const tid = parseInt(topicIdMatch[1], 10);
-              matchedDiscussion = discussionTopics.find(t => t.TopicId === tid);
+            const rawTid = topicIdMatch ? parseInt(topicIdMatch[1], 10) : (topic.ToolItemId ? parseInt(topic.ToolItemId, 10) : null);
+            if (rawTid) {
+              matchedDiscussion = discussionTopics.find(t => t.TopicId === rawTid);
             }
             if (!matchedDiscussion) {
               const cleanTopicTitle = this.cleanNameForMatching(topicTitle);
@@ -1691,7 +1857,8 @@ const D2LApi = {
               let processed = this.processHtmlContent(descHtml, topicUrl, unitObj.attachments, downloadAssets);
               
               const rubricIds = this.extractRubricIds(matchedDiscussion);
-              const rubric = this.findRubricForActivity(matchedDiscussion.Name, rubricIds, rubricsMap);
+              const tid = matchedDiscussion.TopicId || rawTid;
+              const rubric = this.findRubricForActivity(matchedDiscussion.Name, rubricIds, rubricsMap, tid, 'discussion');
               if (rubric) {
                 topicItem.rubric = rubric;
                 processed += this.buildRubricHtml(rubric);
@@ -1704,9 +1871,9 @@ const D2LApi = {
             // Match dropbox folder
             let matchedDropbox = null;
             const folderIdMatch = topicUrl.match(/[?&]id=(\d+)/i) || topicUrl.match(/[?&]db=(\d+)/i) || topicUrl.match(/[?&]folderId=(\d+)/i);
-            if (folderIdMatch) {
-              const dbId = parseInt(folderIdMatch[1], 10);
-              matchedDropbox = dropboxFolders.find(f => f.Id === dbId || f.FolderId === dbId);
+            const rawDbId = folderIdMatch ? parseInt(folderIdMatch[1], 10) : (topic.ToolItemId ? parseInt(topic.ToolItemId, 10) : null);
+            if (rawDbId) {
+              matchedDropbox = dropboxFolders.find(f => f.Id === rawDbId || f.FolderId === rawDbId);
             }
             if (!matchedDropbox) {
               const cleanTopicTitle = this.cleanNameForMatching(topicTitle);
@@ -1724,7 +1891,8 @@ const D2LApi = {
               let processed = this.processHtmlContent(descHtml, topicUrl, unitObj.attachments, downloadAssets);
               
               const rubricIds = this.extractRubricIds(matchedDropbox);
-              const rubric = this.findRubricForActivity(matchedDropbox.Name, rubricIds, rubricsMap);
+              const dbId = matchedDropbox.Id || matchedDropbox.FolderId || rawDbId;
+              const rubric = this.findRubricForActivity(matchedDropbox.Name, rubricIds, rubricsMap, dbId, 'dropbox');
               if (rubric) {
                 topicItem.rubric = rubric;
                 processed += this.buildRubricHtml(rubric);
@@ -1797,16 +1965,12 @@ const D2LApi = {
     for (const entry of rawTopicsToFetch) {
       const item = entry.item;
       const unitObj = entry.unitObj;
-      if (item.contentHtml) {
-        fetched++;
-        if (onProgress) {
-          onProgress(Math.round((fetched / Math.max(totalToFetch, 1)) * 50) + 25, `Extracted ${fetched}/${totalToFetch}: ${item.title}`);
-        }
-        continue;
-      }
-      if (item.url) {
+      const isDiscussion = unitObj.discussions && unitObj.discussions.some(d => d.id === item.id);
+      const isAssignment = unitObj.assignments && unitObj.assignments.some(a => a.id === item.id);
+      const isQuiz = unitObj.quizzes && unitObj.quizzes.some(q => q.id === item.id);
+
+      if (!item.contentHtml && item.url) {
         const discovered = [];
-        const isQuiz = unitObj.quizzes && unitObj.quizzes.some(q => q.id === item.id);
         if (onProgress) {
           onProgress(Math.round((fetched / Math.max(totalToFetch, 1)) * 50) + 25, `Fetching ${isQuiz ? 'quiz' : 'topic'} (${fetched + 1}/${totalToFetch}): ${item.title}`);
         }
@@ -1826,6 +1990,100 @@ const D2LApi = {
           });
         }
       }
+
+      // If discussion or assignment lacks rubric, perform on-demand fetch with Valence API & LMS fallback
+      if ((isDiscussion || isAssignment) && !item.rubric && orgUnitId) {
+        if (isDiscussion) {
+          let tid = null;
+          const topicIdMatch = item.url ? (item.url.match(/[?&]id=(\d+)/i) || item.url.match(/[?&]tid=(\d+)/i) || item.url.match(/[?&]topicId=(\d+)/i)) : null;
+          if (topicIdMatch) tid = parseInt(topicIdMatch[1], 10);
+          if (!tid && item.toolItemId) tid = parseInt(item.toolItemId, 10);
+          if (!tid) {
+            const cleanTitle = this.cleanNameForMatching(item.title);
+            const matched = discussionTopics.find(t => this.cleanNameForMatching(t.Name) === cleanTitle);
+            if (matched) tid = matched.TopicId;
+          }
+          if (tid) {
+            try {
+              const actRubrics = await this.getRubricsForActivity(orgUnitId, 'Discussion', tid);
+              if (Array.isArray(actRubrics) && actRubrics.length > 0) {
+                let r = actRubrics[0];
+                const rid = r.RubricId || r.Id;
+                if (rid && (!r.CriteriaGroups || r.CriteriaGroups.length === 0)) {
+                  const details = await this.getRubricDetails(orgUnitId, rid);
+                  if (details) r = details;
+                }
+                item.rubric = r;
+                rubricsMap[`discussion_${tid}`] = r;
+                if (rid) rubricsMap[rid] = r;
+              } else {
+                const lmsRubric = await this.fetchLmsRubricFallback(orgUnitId, null, null, tid);
+                if (lmsRubric) {
+                  item.rubric = lmsRubric;
+                  rubricsMap[`discussion_${tid}`] = lmsRubric;
+                }
+              }
+            } catch (e) {
+              console.warn(`Failed on-demand rubric fetch for discussion ${item.title}:`, e);
+            }
+          }
+        } else if (isAssignment) {
+          let dbId = null;
+          const folderIdMatch = item.url ? (item.url.match(/[?&]id=(\d+)/i) || item.url.match(/[?&]db=(\d+)/i) || item.url.match(/[?&]folderId=(\d+)/i)) : null;
+          if (folderIdMatch) dbId = parseInt(folderIdMatch[1], 10);
+          if (!dbId && item.toolItemId) dbId = parseInt(item.toolItemId, 10);
+          if (!dbId) {
+            const cleanTitle = this.cleanNameForMatching(item.title);
+            const matched = dropboxFolders.find(f => this.cleanNameForMatching(f.Name) === cleanTitle);
+            if (matched) dbId = matched.Id || matched.FolderId;
+          }
+          if (dbId) {
+            try {
+              const actRubrics = await this.getRubricsForActivity(orgUnitId, 'Dropbox', dbId);
+              if (Array.isArray(actRubrics) && actRubrics.length > 0) {
+                let r = actRubrics[0];
+                const rid = r.RubricId || r.Id;
+                if (rid && (!r.CriteriaGroups || r.CriteriaGroups.length === 0)) {
+                  const details = await this.getRubricDetails(orgUnitId, rid);
+                  if (details) r = details;
+                }
+                item.rubric = r;
+                rubricsMap[`dropbox_${dbId}`] = r;
+                if (rid) rubricsMap[rid] = r;
+              } else {
+                const lmsRubric = await this.fetchLmsRubricFallback(orgUnitId, null, dbId, null);
+                if (lmsRubric) {
+                  item.rubric = lmsRubric;
+                  rubricsMap[`dropbox_${dbId}`] = lmsRubric;
+                }
+              }
+            } catch (e) {
+              console.warn(`Failed on-demand rubric fetch for assignment ${item.title}:`, e);
+            }
+          }
+        }
+
+        if (item.rubric && item.contentHtml && !item.contentHtml.includes('rubric-container')) {
+          item.contentHtml += '\n' + this.buildRubricHtml(item.rubric);
+        }
+      }
+
+      // If contentHtml contains a rendered rubric but item.rubric was not set, parse it from DOM
+      if (!item.rubric && item.contentHtml && (item.contentHtml.includes('rubric-container') || item.contentHtml.includes('d2l-rubric') || item.contentHtml.includes('d_g'))) {
+        try {
+          if (typeof DOMParser !== 'undefined') {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(item.contentHtml, 'text/html');
+            const parsed = this.extractRubricFromDOM(doc);
+            if (parsed) {
+              item.rubric = parsed;
+            }
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+
       fetched++;
       if (onProgress) {
         onProgress(Math.round((fetched / Math.max(totalToFetch, 1)) * 50) + 25, `Extracted ${fetched}/${totalToFetch}: ${item.title}`);
@@ -2380,4 +2638,8 @@ if (typeof window !== 'undefined') {
 if (typeof globalThis !== 'undefined') {
   globalThis.D2LApi = D2LApi;
 }
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = D2LApi;
+}
+
 

@@ -223,7 +223,24 @@
             }));
           }
 
-          // Collect all rubric IDs from rubricsList, dropboxes, and discussion topics
+          // 1. Extract active DOM rubric if present on current tab page
+          try {
+            if (typeof document !== 'undefined') {
+              const domRubric = D2LApi.extractRubricFromDOM(document);
+              if (domRubric) {
+                const domId = domRubric.RubricId || 'active_page_dom_rubric';
+                rubricsMap[domId] = domRubric;
+                if (domRubric.Name) {
+                  rubricsMap[domRubric.Name] = domRubric;
+                }
+                console.log('Discovered active page DOM rubric:', domRubric.Name);
+              }
+            }
+          } catch (e) {
+            console.warn('DOM rubric extraction error in export tab:', e);
+          }
+
+          // 2. Collect all rubric IDs from rubricsList, dropboxes, and discussion topics
           const allRubricIds = new Set();
           if (Array.isArray(rubricsList)) {
             rubricsList.forEach(r => { if (r && r.RubricId) allRubricIds.add(r.RubricId); });
@@ -239,13 +256,82 @@
             });
           }
 
+          // 3. Query Valence REST API v1.97 /rubrics/?objectType={Discussion|Dropbox}&objectId={activity_id}
+          // for all dropbox folders and discussion topics (mirrors UoPeople Grader Pro Valence rubric extraction)
+          const rubricIdToActivityKeys = new Map();
+
+          if (Array.isArray(dropboxFolders) && dropboxFolders.length > 0) {
+            emitProgress(18, 'Resolving assignment rubrics via Valence API...');
+            await Promise.all(dropboxFolders.map(async (folder) => {
+              const folderId = folder.Id || folder.FolderId;
+              if (!folderId) return;
+              try {
+                const actRubrics = await D2LApi.getRubricsForActivity(orgUnitId, 'Dropbox', folderId);
+                if (Array.isArray(actRubrics) && actRubrics.length > 0) {
+                  for (const r of actRubrics) {
+                    const rid = r.RubricId || r.Id;
+                    if (rid) {
+                      allRubricIds.add(rid);
+                      const actKey = `dropbox_${folderId}`;
+                      rubricsMap[actKey] = r;
+                      rubricsMap[rid] = r;
+                      if (r.Name) rubricsMap[r.Name] = r;
+                      if (!rubricIdToActivityKeys.has(rid)) rubricIdToActivityKeys.set(rid, new Set());
+                      rubricIdToActivityKeys.get(rid).add(actKey);
+                    }
+                  }
+                }
+              } catch (e) {
+                console.warn(`Failed to fetch activity rubrics for dropbox ${folderId}:`, e);
+              }
+            }));
+          }
+
+          if (Array.isArray(discussionTopics) && discussionTopics.length > 0) {
+            emitProgress(21, 'Resolving discussion rubrics via Valence API...');
+            await Promise.all(discussionTopics.map(async (topic) => {
+              const topicId = topic.TopicId || topic.Id;
+              if (!topicId) return;
+              try {
+                const actRubrics = await D2LApi.getRubricsForActivity(orgUnitId, 'Discussion', topicId);
+                if (Array.isArray(actRubrics) && actRubrics.length > 0) {
+                  for (const r of actRubrics) {
+                    const rid = r.RubricId || r.Id;
+                    if (rid) {
+                      allRubricIds.add(rid);
+                      const actKey = `discussion_${topicId}`;
+                      rubricsMap[actKey] = r;
+                      rubricsMap[rid] = r;
+                      if (r.Name) rubricsMap[r.Name] = r;
+                      if (!rubricIdToActivityKeys.has(rid)) rubricIdToActivityKeys.set(rid, new Set());
+                      rubricIdToActivityKeys.get(rid).add(actKey);
+                    }
+                  }
+                }
+              } catch (e) {
+                console.warn(`Failed to fetch activity rubrics for discussion ${topicId}:`, e);
+              }
+            }));
+          }
+
+          // 4. Resolve details for any rubric IDs lacking criteria groups
           if (allRubricIds.size > 0) {
             console.log(`Discovered ${allRubricIds.size} unique rubric IDs to resolve:`, Array.from(allRubricIds));
             await Promise.all(Array.from(allRubricIds).map(async (rid) => {
               try {
-                const details = await D2LApi.getRubricDetails(orgUnitId, rid);
-                if (details) {
-                  rubricsMap[rid] = details;
+                const existing = rubricsMap[rid];
+                if (!existing || !existing.CriteriaGroups || existing.CriteriaGroups.length === 0) {
+                  const details = await D2LApi.getRubricDetails(orgUnitId, rid);
+                  if (details) {
+                    rubricsMap[rid] = details;
+                    if (details.Name) rubricsMap[details.Name] = details;
+                    const linkedKeys = rubricIdToActivityKeys.get(rid);
+                    if (linkedKeys) {
+                      for (const k of linkedKeys) {
+                        rubricsMap[k] = details;
+                      }
+                    }
+                  }
                 }
               } catch (e) {
                 console.warn(`Failed to fetch details for rubric ${rid}:`, e);
