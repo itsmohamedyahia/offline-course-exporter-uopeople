@@ -98,7 +98,15 @@ Brightspace embeds YouTube videos in restrictive iframes with referrer restricti
   - GitHub Repository: `https://github.com/itsmohamedyahia/offline-course-exporter-uopeople`
   - Support/Donate: `https://ko-fi.com/myahiakhidr`
 
+### 10. 📋 Rubric Extraction, Resolution, & Clean Markdown Export
+* **Valence REST API Resolution:** Rubrics attached to discussions or dropbox assignments are queried via `/d2l/api/le/1.97/{orgUnitId}/rubrics/?objectType={Discussion|Dropbox}&objectId={activityId}`. Always resolve detailed criteria groups (`getRubricDetails`) back into the mapped activity keys (`dropbox_${id}`, `discussion_${id}`); shallow summary objects lack `CriteriaGroups` and yield empty tables.
+* **Multi-Activity Preservation:** Never use static substring deduplication checks (e.g. `!md.includes(rubricMd.substring(0, 30))`) when rendering activity rubrics. Identical rubric header prefixes cause subsequent rubrics in multi-activity units to be silently dropped.
+* **Embedded Rubric HTML Stripping:** When appending structured markdown rubric tables to `03_Discussions.md` and `04_Assignments.md`, strip any raw `.rubric-container` HTML from `contentHtml` before markdown conversion to prevent redundant mixed-format snippets.
+* **QuickLink Activity ID Fallback:** Brightspace TOC modules link activities via QuickLinks (`rCode=...`) where `topicId`/`folderId` is absent from query parameters. Always resolve activities using `topic.ToolItemId`.
+* **Arabic-Indic Digit & Diacritic Normalization:** In `cleanNameForMatching()`, always convert Arabic-Indic numerals (`[٠-٩]`, `[۰-۹]`) to ASCII digits and strip tashkeel diacritics before comparing course activity titles with rubric names.
+
 ---
+
 
 ## 🛠️ Multi-Browser Packaging & Release Protocol
 
