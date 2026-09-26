@@ -111,6 +111,17 @@ const MarkdownBuilder = {
   htmlToMarkdown(htmlStr) {
     if (!htmlStr) return '';
     try {
+      if (typeof DOMParser === 'undefined') {
+        return htmlStr
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n\n')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .trim();
+      }
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlStr, 'text/html');
       const rawMd = this.nodeToMarkdown(doc.body).trim();
@@ -349,6 +360,174 @@ const MarkdownBuilder = {
     return md;
   },
 
+  htmlTableToMarkdownFallback(tableHtml) {
+    if (!tableHtml) return '';
+    try {
+      const rowMatches = tableHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
+      if (rowMatches.length === 0) return '';
+      const rows = [];
+      for (const rowHtml of rowMatches) {
+        const cellMatches = rowHtml.match(/<(?:th|td)[^>]*>[\s\S]*?<\/(?:th|td)>/gi) || [];
+        const cells = cellMatches.map(c => {
+          return c
+            .replace(/<br\s*\/?>/gi, '<br>')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/\|/g, '\\|')
+            .replace(/\s+/g, ' ')
+            .trim();
+        });
+        if (cells.length > 0) rows.push(cells);
+      }
+      if (rows.length === 0) return '';
+      const colCount = Math.max(...rows.map(r => r.length));
+      const normalizedRows = rows.map(r => {
+        const copy = [...r];
+        while (copy.length < colCount) copy.push('-');
+        return copy;
+      });
+      let md = `| ${normalizedRows[0].join(' | ')} |\n`;
+      md += `| ${normalizedRows[0].map(() => '---').join(' | ')} |\n`;
+      for (let i = 1; i < normalizedRows.length; i++) {
+        md += `| ${normalizedRows[i].join(' | ')} |\n`;
+      }
+      return md.trim();
+    } catch (e) {
+      return '';
+    }
+  },
+
+  renderRubricMarkdown(rubric) {
+    if (!rubric) return '';
+    try {
+      // 1. Plain text rubric
+      if (typeof rubric === 'string') {
+        const trimmed = rubric.trim();
+        return trimmed ? `### 📋 Evaluation Rubric\n\n${trimmed}\n` : '';
+      }
+
+      // 2. Raw HTML table fallback
+      if (rubric.isRawHtml && rubric.rawTableHtml) {
+        if (typeof DOMParser !== 'undefined') {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(rubric.rawTableHtml, 'text/html');
+          const table = doc.querySelector('table');
+          if (table) {
+            const tableMd = this.tableToMarkdown(table);
+            const name = rubric.Name || 'Evaluation Rubric';
+            return `### 📋 Evaluation Rubric: ${name}\n\n${tableMd}\n`;
+          }
+        } else {
+          const tableMd = this.htmlTableToMarkdownFallback(rubric.rawTableHtml);
+          if (tableMd) {
+            const name = rubric.Name || 'Evaluation Rubric';
+            return `### 📋 Evaluation Rubric: ${name}\n\n${tableMd}\n`;
+          }
+        }
+      }
+
+      // 3. Structured rubric object
+      const rubricName = rubric.Name || 'Evaluation Rubric';
+      const criteriaGroups = (rubric.CriteriaGroups && rubric.CriteriaGroups.length > 0)
+        ? rubric.CriteriaGroups
+        : (rubric.Criteria ? [{ Criteria: rubric.Criteria, Levels: rubric.Levels }] : []);
+
+      if (criteriaGroups.length === 0) return '';
+
+      let md = `### 📋 Evaluation Rubric: ${rubricName}\n\n`;
+
+      if (rubric.Description) {
+        const descText = typeof rubric.Description === 'object'
+          ? (rubric.Description.Text || rubric.Description.Html || '')
+          : String(rubric.Description);
+        if (descText.trim()) {
+          const cleanDesc = descText.replace(/<[^>]+>/g, '').trim();
+          if (cleanDesc) {
+            md += `> ${cleanDesc.replace(/\n+/g, '\n> ')}\n\n`;
+          }
+        }
+      }
+
+      for (const group of criteriaGroups) {
+        const levels = (group.Levels && group.Levels.length > 0) ? group.Levels : (rubric.Levels || []);
+        const criteria = group.Criteria || [];
+        if (criteria.length === 0) continue;
+
+        const headers = ['Criteria'];
+        levels.forEach(lvl => {
+          const pts = (lvl.Points !== undefined && lvl.Points !== null) ? lvl.Points : (lvl.Value !== undefined ? lvl.Value : null);
+          const lvlName = lvl.Name || 'Level';
+          headers.push(pts !== null ? `${lvlName}<br>*(${pts} pts)*` : lvlName);
+        });
+
+        md += `| ${headers.join(' | ')} |\n`;
+        md += `| ${headers.map(() => '---').join(' | ')} |\n`;
+
+        criteria.forEach(crit => {
+          const critName = crit.Name || 'Criterion';
+          let critCol = `**${critName}**`;
+          if (crit.Outof !== undefined && crit.Outof !== null) {
+            critCol += `<br>*(Out of ${crit.Outof} pts)*`;
+          } else if (crit.Weight !== undefined && crit.Weight !== null) {
+            critCol += `<br>*(Weight: ${crit.Weight}%)*`;
+          }
+
+          const critLevels = crit.Cells || crit.Levels || [];
+          const rowCols = [critCol];
+
+          for (let i = 0; i < levels.length; i++) {
+            const lvl = levels[i];
+            const targetLvlId = (lvl.Id !== undefined && lvl.Id !== null) ? lvl.Id : lvl.LevelId;
+            const cell = critLevels.find(cl => {
+              const clId = (cl.LevelId !== undefined && cl.LevelId !== null) ? cl.LevelId : cl.Id;
+              return String(clId) === String(targetLvlId);
+            }) || critLevels[i] || {};
+
+            let cellDesc = '';
+            if (cell.Description) {
+              cellDesc = typeof cell.Description === 'object'
+                ? (cell.Description.Text || cell.Description.Html || '')
+                : String(cell.Description);
+            } else if (cell.Feedback) {
+              cellDesc = typeof cell.Feedback === 'object'
+                ? (cell.Feedback.Text || cell.Feedback.Html || '')
+                : String(cell.Feedback);
+            }
+            cellDesc = cellDesc.replace(/<[^>]+>/g, '').trim();
+
+            const pts = (cell.Points !== undefined && cell.Points !== null)
+              ? cell.Points
+              : (cell.Value !== undefined ? cell.Value : ((lvl.Points !== undefined) ? lvl.Points : null));
+
+            let cellContent = '';
+            if (pts !== null && pts !== undefined) {
+              cellContent += `**${pts} pts**`;
+            }
+            if (cellDesc) {
+              const cleanDesc = cellDesc
+                .replace(/\|/g, '\\|')
+                .replace(/\n+/g, '<br>')
+                .replace(/(?:<br>\s*)+/g, '<br>');
+              cellContent += (cellContent ? '<br>' : '') + cleanDesc;
+            }
+            rowCols.push(cellContent || '-');
+          }
+
+          md += `| ${rowCols.join(' | ')} |\n`;
+        });
+        md += '\n';
+      }
+
+      return md.trim();
+    } catch (e) {
+      console.error('Error rendering rubric Markdown:', e);
+      return '';
+    }
+  },
+
   isDuplicateTitle(parentTitle, childTitle) {
     if (!childTitle || !parentTitle) return false;
     const p = parentTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -575,9 +754,44 @@ const MarkdownBuilder = {
               md += `*Brightspace Link: [Open Discussion Thread ↗](${d.url})*\n\n`;
             }
             if (d.contentHtml) {
-              const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(d.contentHtml, d.title));
+              let contentHtmlToClean = d.contentHtml;
+              if (d.rubric || (d.rubrics && d.rubrics.length > 0)) {
+                // If structured rubric object is attached, remove embedded rubric HTML container
+                // so renderRubricMarkdown produces the canonical clean markdown table
+                if (typeof DOMParser !== 'undefined') {
+                  try {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(contentHtmlToClean, 'text/html');
+                    const rc = doc.querySelector('.rubric-container, d2l-rubric');
+                    if (rc) {
+                      rc.remove();
+                      contentHtmlToClean = doc.body.innerHTML;
+                    }
+                  } catch (e) {
+                    contentHtmlToClean = contentHtmlToClean.replace(/<div class="rubric-container">[\s\S]*?<\/table>\s*<\/div>\s*<\/div>/gi, '');
+                  }
+                } else {
+                  contentHtmlToClean = contentHtmlToClean.replace(/<div class="rubric-container">[\s\S]*?<\/table>\s*<\/div>\s*<\/div>/gi, '');
+                  contentHtmlToClean = contentHtmlToClean.replace(/<div class="rubric-container">[\s\S]*$/gi, '');
+                }
+              }
+              const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(contentHtmlToClean, d.title));
               md += `${bodyMd}\n\n`;
               masterNotesContent += `${bodyMd}\n\n`;
+            }
+            const rubricsToRender = [];
+            if (d.rubric) rubricsToRender.push(d.rubric);
+            if (Array.isArray(d.rubrics)) {
+              d.rubrics.forEach(r => {
+                if (r && !rubricsToRender.includes(r)) rubricsToRender.push(r);
+              });
+            }
+            for (const r of rubricsToRender) {
+              const rubricMd = this.renderRubricMarkdown(r);
+              if (rubricMd) {
+                md += `${rubricMd}\n\n`;
+                masterNotesContent += `${rubricMd}\n\n`;
+              }
             }
             md += `---\n\n`;
           });
@@ -595,9 +809,44 @@ const MarkdownBuilder = {
               md += `*Brightspace Link: [Open Assignment Submission ↗](${a.url})*\n\n`;
             }
             if (a.contentHtml) {
-              const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(a.contentHtml, a.title));
+              let contentHtmlToClean = a.contentHtml;
+              if (a.rubric || (a.rubrics && a.rubrics.length > 0)) {
+                // If structured rubric object is attached, remove embedded rubric HTML container
+                // so renderRubricMarkdown produces the canonical clean markdown table
+                if (typeof DOMParser !== 'undefined') {
+                  try {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(contentHtmlToClean, 'text/html');
+                    const rc = doc.querySelector('.rubric-container, d2l-rubric');
+                    if (rc) {
+                      rc.remove();
+                      contentHtmlToClean = doc.body.innerHTML;
+                    }
+                  } catch (e) {
+                    contentHtmlToClean = contentHtmlToClean.replace(/<div class="rubric-container">[\s\S]*?<\/table>\s*<\/div>\s*<\/div>/gi, '');
+                  }
+                } else {
+                  contentHtmlToClean = contentHtmlToClean.replace(/<div class="rubric-container">[\s\S]*?<\/table>\s*<\/div>\s*<\/div>/gi, '');
+                  contentHtmlToClean = contentHtmlToClean.replace(/<div class="rubric-container">[\s\S]*$/gi, '');
+                }
+              }
+              const bodyMd = this.htmlToMarkdown(this.cleanContentHtml(contentHtmlToClean, a.title));
               md += `${bodyMd}\n\n`;
               masterNotesContent += `${bodyMd}\n\n`;
+            }
+            const rubricsToRender = [];
+            if (a.rubric) rubricsToRender.push(a.rubric);
+            if (Array.isArray(a.rubrics)) {
+              a.rubrics.forEach(r => {
+                if (r && !rubricsToRender.includes(r)) rubricsToRender.push(r);
+              });
+            }
+            for (const r of rubricsToRender) {
+              const rubricMd = this.renderRubricMarkdown(r);
+              if (rubricMd) {
+                md += `${rubricMd}\n\n`;
+                masterNotesContent += `${rubricMd}\n\n`;
+              }
             }
             md += `---\n\n`;
           });
@@ -745,3 +994,13 @@ const MarkdownBuilder = {
     return files;
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.MarkdownBuilder = MarkdownBuilder;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.MarkdownBuilder = MarkdownBuilder;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = MarkdownBuilder;
+}

@@ -1819,6 +1819,117 @@ const HTMLBuilder = {
       .section-card { border: 1px solid #ccc; page-break-inside: avoid; }
     }
 
+    /* Evaluation Rubric Component */
+    .rubric-container {
+      margin: 24px 0 16px 0;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--bg-card);
+    }
+    .rubric-header {
+      padding: 14px 18px;
+      background: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border-color);
+    }
+    .rubric-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .rubric-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin: 0 0 4px 0;
+    }
+    .rubric-description {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .rubric-table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+    }
+    .rubric-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      text-align: left;
+    }
+    .rubric-table th, .rubric-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
+      vertical-align: top;
+    }
+    .rubric-table th:last-child, .rubric-table td:last-child {
+      border-right: none;
+    }
+    .rubric-col-criterion {
+      background: var(--bg-card-hover);
+      color: var(--text-main);
+      font-weight: 600;
+      width: 22%;
+      min-width: 140px;
+    }
+    .rubric-col-level {
+      background: var(--bg-card);
+      color: var(--text-main);
+      font-weight: 600;
+      text-align: center;
+      min-width: 130px;
+    }
+    .rubric-level-name {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .rubric-level-points {
+      font-size: 11.5px;
+      color: var(--accent);
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    .rubric-cell-criterion {
+      background: var(--bg-card);
+      font-weight: 500;
+    }
+    .rubric-crit-name {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .rubric-crit-outof, .rubric-crit-weight {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+    .rubric-cell-level {
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--text-main);
+    }
+    .rubric-cell-points {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      color: #10b981;
+      background: rgba(16, 185, 129, 0.12);
+      border-radius: 4px;
+      padding: 2px 6px;
+      margin-bottom: 6px;
+    }
+    .rubric-cell-desc {
+      color: var(--text-muted);
+    }
+
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(-4px); }
       to { opacity: 1; transform: translateY(0); }
