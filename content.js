@@ -688,7 +688,17 @@
     return { courseInfo, units, zipFiles };
   }
 
+  let isExportingInProgress = false;
+
   async function runExportPipeline(orgUnitId, downloadAssets, exportFormat, exportScope, sendResponse) {
+    if (isExportingInProgress) {
+      if (typeof sendResponse === 'function') {
+        sendResponse({ success: false, error: 'An export is already in progress.' });
+      }
+      return;
+    }
+
+    isExportingInProgress = true;
     try {
       console.log(`Starting export pipeline for OrgUnitID: ${orgUnitId} (Format: ${exportFormat}, Scope: ${exportScope})`);
       emitProgress(8, 'Fetching course Table of Contents...');
@@ -725,21 +735,23 @@
 
     } catch (err) {
       console.error('Export Pipeline Error:', err);
-      sendResponse({ success: false, error: err.message });
+      if (typeof sendResponse === 'function') {
+        sendResponse({ success: false, error: err.message });
+      }
+    } finally {
+      isExportingInProgress = false;
     }
   }
 
-  let isBatchExportingInProgress = false;
-
   async function runBatchExportPipeline(courses, downloadAssets, exportFormat, exportScope, sendResponse) {
-    if (isBatchExportingInProgress) {
+    if (isExportingInProgress) {
       if (typeof sendResponse === 'function') {
-        sendResponse({ success: false, error: 'A batch export is already in progress.' });
+        sendResponse({ success: false, error: 'An export is already in progress.' });
       }
       return;
     }
 
-    isBatchExportingInProgress = true;
+    isExportingInProgress = true;
     const totalCourses = courses.length;
     const masterZipFiles = [];
     const processedCoursesSummary = [];
@@ -776,7 +788,7 @@
         );
         showCompletionToast(
           `[${idx + 1}/${totalCourses}] ${courseName}`,
-          idx,
+          idx + 1,
           totalCourses,
           baseCoursePercent,
           'Initializing course extraction...',
@@ -802,7 +814,7 @@
               );
               showCompletionToast(
                 `[${idx + 1}/${totalCourses}] ${courseName}`,
-                idx,
+                idx + 1,
                 totalCourses,
                 currentOverallPct,
                 statusText,
@@ -937,7 +949,7 @@
         sendResponse({ success: false, error: err.message });
       }
     } finally {
-      isBatchExportingInProgress = false;
+      isExportingInProgress = false;
     }
   }
 
@@ -948,6 +960,7 @@
   let toastDismissTimer = null;
 
   function showCompletionToast(courseName, current, total, percent, statusText, isDone = false) {
+    if (typeof document === 'undefined' || !document || !document.body) return;
     let container = document.getElementById('uop-exporter-completion-toast');
     if (!container) {
       container = document.createElement('div');
@@ -1024,6 +1037,7 @@
   }
 
   function hideCompletionToast(immediate = false) {
+    if (typeof document === 'undefined' || !document || !document.body) return;
     const container = document.getElementById('uop-exporter-completion-toast');
     if (!container) return;
     if (immediate) {

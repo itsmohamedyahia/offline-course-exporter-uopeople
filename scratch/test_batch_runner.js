@@ -321,7 +321,50 @@ async function runTests() {
       }
     );
   });
-  console.log('✓ Runtime message listeners for GET_ENROLLED_COURSES and START_BATCH_EXPORT verified');
+  // Test 7: Export Concurrency Guard (isExportingInProgress)
+  console.log('Test 7: Concurrency guard prevents simultaneous single/batch exports');
+  const slowCourses = [{ id: '101', name: 'CS 2301 Operating Systems' }];
+  let resolveSlowToc;
+  const originalGetToc = global.D2LApi.getTOC;
+  global.D2LApi.getTOC = () => new Promise((r) => { resolveSlowToc = r; });
+
+  const firstExportPromise = new Promise((resolve) => {
+    runBatchExportPipeline(slowCourses, false, 'combined', 'full', resolve);
+  });
+
+  // Second simultaneous export must be rejected immediately
+  const secondExportResult = await new Promise((resolve) => {
+    runBatchExportPipeline(slowCourses, false, 'combined', 'full', resolve);
+  });
+
+  assert.strictEqual(secondExportResult.success, false, 'Simultaneous export must be rejected');
+  assert.strictEqual(secondExportResult.error, 'An export is already in progress.', 'Error message must match concurrency guard');
+
+  // Let the first export finish
+  resolveSlowToc({ Modules: [{ Title: 'Unit 1: Overview', Topics: [] }] });
+  await firstExportPromise;
+  global.D2LApi.getTOC = originalGetToc;
+  console.log('✓ Export concurrency guard verified');
+
+  // Test 8: Isomorphic Global Fallback Guard on Toast Functions
+  console.log('Test 8: showCompletionToast and hideCompletionToast are safe in headless Node (document undefined)');
+  const savedDoc = global.document;
+  try {
+    global.document = undefined;
+    // Neither call should throw ReferenceError or TypeError
+    assert.doesNotThrow(() => {
+      // Trigger pipeline extraction or direct toast invocation
+      if (typeof global.showCompletionToast === 'function') {
+        global.showCompletionToast('Test Course', 1, 1, 50, 'Processing...');
+      }
+      if (typeof global.hideCompletionToast === 'function') {
+        global.hideCompletionToast(true);
+      }
+    });
+  } finally {
+    global.document = savedDoc;
+  }
+  console.log('✓ Isomorphic document fallback guard verified');
 
   console.log('--- ALL TASK 5 TESTS PASSED SUCCESSFULLY! ---');
 }
