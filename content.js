@@ -2,10 +2,11 @@
  * Content Script injected into Brightspace pages
  */
 (function () {
-  if (window.__UOP_COURSE_EXPORTER_LOADED__) {
+  const root = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : global);
+  if (root.__UOP_COURSE_EXPORTER_LOADED__) {
     return;
   }
-  window.__UOP_COURSE_EXPORTER_LOADED__ = true;
+  root.__UOP_COURSE_EXPORTER_LOADED__ = true;
 
   function escapeHtml(str) {
     if (!str) return '';
@@ -18,7 +19,8 @@
   }
 
   function detectOrgUnitId() {
-    const url = window.location.href;
+    if (typeof window === 'undefined' || !window.location) return null;
+    const url = window.location.href || '';
     const pathname = (window.location.pathname || '').replace(/\/+$/, '').toLowerCase();
 
     // 1. Immediately exclude root landing portal, home, login, and system preference pages
@@ -158,18 +160,532 @@
       runExportPipeline(orgUnitId, downloadAssets, exportFormat, exportScope, sendResponse);
       return true;
     }
+
+    if (request.action === 'GET_ENROLLED_COURSES') {
+      D2LApi.getEnrolledCourses()
+        .then(courses => sendResponse({ success: true, courses: courses || [] }))
+        .catch(err => {
+          console.warn('GET_ENROLLED_COURSES error:', err);
+          sendResponse({ success: false, error: err.message, courses: [] });
+        });
+      return true;
+    }
+
+    if (request.action === 'START_BATCH_EXPORT') {
+      if (!Array.isArray(request.courses) || request.courses.length === 0) {
+        sendResponse({ success: false, error: 'No courses provided for batch export.' });
+        return true;
+      }
+      const downloadAssets = request.downloadAssets !== false;
+      const exportFormat = request.exportFormat || 'combined';
+      const exportScope = request.exportScope || 'full';
+
+      runBatchExportPipeline(request.courses, downloadAssets, exportFormat, exportScope, sendResponse);
+      return true;
+    }
   });
 
   function emitProgress(percent, status) {
     try {
-      chrome.runtime.sendMessage({
-        action: 'EXPORT_PROGRESS',
-        percent: Math.min(Math.max(percent, 0), 100),
-        status: status
-      }, () => {
-        if (chrome.runtime.lastError) {}
-      });
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        chrome.runtime.sendMessage({
+          action: 'EXPORT_PROGRESS',
+          percent: Math.min(Math.max(percent, 0), 100),
+          status: status
+        }, () => {
+          if (chrome.runtime.lastError) {}
+        });
+      }
     } catch (e) {}
+  }
+
+  function emitBatchProgress(percent, status, courseIndex, totalCourses, currentCourseName) {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        chrome.runtime.sendMessage({
+          action: 'BATCH_EXPORT_PROGRESS',
+          percent: Math.min(Math.max(percent, 0), 100),
+          status: status,
+          courseIndex: courseIndex,
+          totalCourses: totalCourses,
+          currentCourseName: currentCourseName
+        }, () => {
+          if (chrome.runtime.lastError) {}
+        });
+      }
+    } catch (e) {}
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      if (typeof FileReader !== 'undefined') {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      } else if (typeof Buffer !== 'undefined') {
+        const base64 = Buffer.from(blob).toString('base64');
+        resolve(`data:application/zip;base64,${base64}`);
+      } else {
+        reject(new Error('No FileReader or Buffer available to convert blob to DataURL.'));
+      }
+    });
+  }
+
+  function extractCourseCode(str) {
+    if (!str || typeof str !== 'string') return '';
+    const m = str.match(/([A-Z]{2,6}\s*\d{3,5}(?:-\d+)?)/i);
+    return m ? m[1].toUpperCase() : '';
+  }
+
+  function sanitizeCourseFolderName(courseName, courseId, idx) {
+    let cleanName = (courseName || `Course_${courseId || idx || 1}`).trim();
+
+    // 1. Strip trailing Brightspace / LMS brand suffixes
+    cleanName = cleanName.replace(/\s*-\s*(?:Brightspace|University of the People|UoPeople|D2L).*$/i, '').trim();
+
+    // 2. Extract course code onwards if preceded by page title
+    const courseCodeMatch = cleanName.match(/(?:^|.*?\s+-\s+)([A-Z]{2,6}\s*\d{3,5}(?:-\d+)?\s+.*)$/i);
+    if (courseCodeMatch && courseCodeMatch[1]) {
+      cleanName = courseCodeMatch[1].trim();
+    } else {
+      const pagePrefixRegex = /^(?:Homepage|Course Home(?:page)?|Home|Table of Contents|TOC|Content(?:s)?|Announcements?|Discussions?|Discussion Forum(?: [^-]+)?|Assignments?|Assignment Activity(?: [^-]+)?|Written Assignment(?: [^-]+)?|Learning Guide(?: [^-]+)?|Reading Assignment(?: [^-]+)?|Self-Quiz(?: [^-]+)?|Graded Quiz(?: [^-]+)?|Review Quiz(?: [^-]+)?|Final Exam(?: [^-]+)?|Quizzes|Grades?|Classlist|Lessons?|Course Overview|Overview|Unit\s+\d+(?: [^-]+)?)\s*-\s*/i;
+      while (pagePrefixRegex.test(cleanName)) {
+        cleanName = cleanName.replace(pagePrefixRegex, '').trim();
+      }
+    }
+
+    // 3. Clean up non-alphanumeric chars for safe folder name
+    cleanName = cleanName.replace(/\s+-\s*|\s*-+\s+/g, '_');
+    const sanitized = cleanName
+      .replace(/[^a-zA-Z0-9_-]+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    return sanitized || `Course_${courseId || idx || 1}`;
+  }
+
+  async function extractCourseFiles(orgUnitId, downloadAssets, exportFormat, exportScope, onProgress) {
+    const notifyProgress = (pct, text) => {
+      if (typeof onProgress === 'function') {
+        onProgress(pct, text);
+      }
+    };
+
+    notifyProgress(8, 'Fetching course Table of Contents...');
+    const courseInfo = await D2LApi.getCourseInfo(orgUnitId);
+    const tocData = await D2LApi.getTOC(orgUnitId);
+    if (!tocData) {
+      throw new Error('Unable to retrieve course Table of Contents.');
+    }
+
+    let dropboxFolders = [];
+    let discussionForums = [];
+    let rubricsList = [];
+    const rubricsMap = {};
+    const discussionTopics = [];
+    let quizzesList = [];
+
+    // In Shareable mode, we skip fetching assignment rubrics, dropbox folders, and quizzes
+    if (exportScope !== 'shareable') {
+      notifyProgress(16, 'Querying discussions, assignments, rubrics & quizzes...');
+      console.log('Fetching course assignment activities, discussions, rubrics and quizzes from D2L API...');
+      try {
+        const [dropboxes, forums, rubrics, quizzesValence, quizzesLms] = await Promise.all([
+          D2LApi.getDropboxFolders(orgUnitId).catch(err => { console.warn('Dropbox folders API failed:', err); return []; }),
+          D2LApi.getDiscussionForums(orgUnitId).catch(err => { console.warn('Discussion forums API failed:', err); return []; }),
+          D2LApi.getRubricsList(orgUnitId).catch(err => { console.warn('Rubrics list API failed:', err); return []; }),
+          D2LApi.getQuizzesList(orgUnitId).catch(err => { console.warn('Quizzes list API failed:', err); return []; }),
+          D2LApi.getQuizzesFromLms(orgUnitId).catch(err => { console.warn('Quizzes LMS scraper failed:', err); return []; })
+        ]);
+        dropboxFolders = dropboxes || [];
+        discussionForums = forums || [];
+        rubricsList = rubrics || [];
+        quizzesList = [...(quizzesValence || []), ...(quizzesLms || [])];
+
+        if (discussionForums.length > 0) {
+          await Promise.all(discussionForums.map(async (forum) => {
+            try {
+              const topics = await D2LApi.getDiscussionTopics(orgUnitId, forum.ForumId);
+              if (topics) {
+                topics.forEach(t => {
+                  t.ForumId = forum.ForumId;
+                  discussionTopics.push(t);
+                });
+              }
+            } catch (e) {
+              console.warn(`Failed to fetch topics for forum ${forum.ForumId}:`, e);
+            }
+          }));
+        }
+
+        // 1. Extract active DOM rubric if present on current tab page
+        try {
+          if (typeof document !== 'undefined') {
+            const domRubric = D2LApi.extractRubricFromDOM(document);
+            if (domRubric) {
+              const domId = domRubric.RubricId || 'active_page_dom_rubric';
+              rubricsMap[domId] = domRubric;
+              if (domRubric.Name) {
+                rubricsMap[domRubric.Name] = domRubric;
+              }
+              console.log('Discovered active page DOM rubric:', domRubric.Name);
+            }
+          }
+        } catch (e) {
+          console.warn('DOM rubric extraction error in export tab:', e);
+        }
+
+        // 2. Collect all rubric IDs from rubricsList, dropboxes, and discussion topics
+        const allRubricIds = new Set();
+        if (Array.isArray(rubricsList)) {
+          rubricsList.forEach(r => { if (r && r.RubricId) allRubricIds.add(r.RubricId); });
+        }
+        if (Array.isArray(dropboxFolders)) {
+          dropboxFolders.forEach(f => {
+            D2LApi.extractRubricIds(f).forEach(id => allRubricIds.add(id));
+          });
+        }
+        if (Array.isArray(discussionTopics)) {
+          discussionTopics.forEach(t => {
+            D2LApi.extractRubricIds(t).forEach(id => allRubricIds.add(id));
+          });
+        }
+
+        // 3. Query Valence REST API v1.97 /rubrics/?objectType={Discussion|Dropbox}&objectId={activity_id}
+        const rubricIdToActivityKeys = new Map();
+
+        if (Array.isArray(dropboxFolders) && dropboxFolders.length > 0) {
+          notifyProgress(18, 'Resolving assignment rubrics via Valence API...');
+          await Promise.all(dropboxFolders.map(async (folder) => {
+            const folderId = folder.Id || folder.FolderId;
+            if (!folderId) return;
+            try {
+              const actRubrics = await D2LApi.getRubricsForActivity(orgUnitId, 'Dropbox', folderId);
+              if (Array.isArray(actRubrics) && actRubrics.length > 0) {
+                for (const r of actRubrics) {
+                  const rid = r.RubricId || r.Id;
+                  if (rid) {
+                    allRubricIds.add(rid);
+                    const actKey = `dropbox_${folderId}`;
+                    rubricsMap[actKey] = r;
+                    rubricsMap[rid] = r;
+                    if (r.Name) rubricsMap[r.Name] = r;
+                    if (!rubricIdToActivityKeys.has(rid)) rubricIdToActivityKeys.set(rid, new Set());
+                    rubricIdToActivityKeys.get(rid).add(actKey);
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn(`Failed to fetch activity rubrics for dropbox ${folderId}:`, e);
+            }
+          }));
+        }
+
+        if (Array.isArray(discussionTopics) && discussionTopics.length > 0) {
+          notifyProgress(21, 'Resolving discussion rubrics via Valence API...');
+          await Promise.all(discussionTopics.map(async (topic) => {
+            const topicId = topic.TopicId || topic.Id;
+            if (!topicId) return;
+            try {
+              const actRubrics = await D2LApi.getRubricsForActivity(orgUnitId, 'Discussion', topicId);
+              if (Array.isArray(actRubrics) && actRubrics.length > 0) {
+                for (const r of actRubrics) {
+                  const rid = r.RubricId || r.Id;
+                  if (rid) {
+                    allRubricIds.add(rid);
+                    const actKey = `discussion_${topicId}`;
+                    rubricsMap[actKey] = r;
+                    rubricsMap[rid] = r;
+                    if (r.Name) rubricsMap[r.Name] = r;
+                    if (!rubricIdToActivityKeys.has(rid)) rubricIdToActivityKeys.set(rid, new Set());
+                    rubricIdToActivityKeys.get(rid).add(actKey);
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn(`Failed to fetch activity rubrics for discussion ${topicId}:`, e);
+            }
+          }));
+        }
+
+        // 4. Resolve details for any rubric IDs lacking criteria groups
+        if (allRubricIds.size > 0) {
+          console.log(`Discovered ${allRubricIds.size} unique rubric IDs to resolve:`, Array.from(allRubricIds));
+          await Promise.all(Array.from(allRubricIds).map(async (rid) => {
+            try {
+              const existing = rubricsMap[rid];
+              if (!existing || !existing.CriteriaGroups || existing.CriteriaGroups.length === 0) {
+                const details = await D2LApi.getRubricDetails(orgUnitId, rid);
+                if (details) {
+                  rubricsMap[rid] = details;
+                  if (details.Name) rubricsMap[details.Name] = details;
+                  const linkedKeys = rubricIdToActivityKeys.get(rid);
+                  if (linkedKeys) {
+                    for (const k of linkedKeys) {
+                      rubricsMap[k] = details;
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn(`Failed to fetch details for rubric ${rid}:`, e);
+            }
+          }));
+        }
+      } catch (e) {
+        console.warn('Metadata pre-fetching encountered errors:', e);
+      }
+    }
+
+    notifyProgress(25, exportScope === 'shareable' ? 'Extracting unit overviews & reading assignments...' : 'Extracting unit contents & quizzes...');
+    const units = await D2LApi.parseModules(
+      tocData,
+      { dropboxFolders, discussionTopics, rubricsMap, quizzesList, orgUnitId, exportScope, downloadAssets },
+      (progress, statusText) => {
+        notifyProgress(progress, statusText || (exportScope === 'shareable' ? 'Extracting unit overviews & reading assignments...' : 'Extracting unit contents & quizzes...'));
+        console.log(`Extraction progress: ${progress}% - ${statusText || ''}`);
+      }
+    );
+
+    const exportedAt = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+
+    const zipFiles = [];
+
+    if (exportFormat === 'markdown') {
+      notifyProgress(75, 'Generating Markdown documents...');
+      const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope, downloadAssets);
+      zipFiles.push(...markdownFiles);
+
+      // Fetch attachment files & embedded PDFs if enabled into per-unit folders
+      if (downloadAssets) {
+        const downloadedCache = new Map(); // url -> Uint8Array
+        let totalAttachments = 0;
+        units.forEach(u => totalAttachments += (u.attachments ? u.attachments.length : 0));
+        let currentAttachmentIdx = 0;
+
+        for (let unitIdx = 0; unitIdx < units.length; unitIdx++) {
+          const unit = units[unitIdx];
+          const unitFolderName = `${String(unitIdx + 1).padStart(2, '0')}_${MarkdownBuilder.sanitizeFolderName(unit.title)}`;
+
+          if (unit.attachments && unit.attachments.length > 0) {
+            for (const att of unit.attachments) {
+              if (att.url) {
+                currentAttachmentIdx++;
+                const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
+                notifyProgress(
+                  75 + Math.round((currentAttachmentIdx / Math.max(totalAttachments, 1)) * 15),
+                  `Downloading asset (${currentAttachmentIdx}/${totalAttachments}): ${cleanFileName}`
+                );
+
+                let bytes = downloadedCache.get(att.url);
+                if (!bytes) {
+                  try {
+                    const result = await new Promise((resolve) => {
+                      chrome.runtime.sendMessage(
+                        { action: 'FETCH_FILE', url: att.url },
+                        (response) => resolve(response)
+                      );
+                    });
+
+                    if (result && result.success && result.base64) {
+                      const binaryStr = atob(result.base64);
+                      bytes = new Uint8Array(binaryStr.length);
+                      for (let i = 0; i < binaryStr.length; i++) {
+                        bytes[i] = binaryStr.charCodeAt(i);
+                      }
+                      downloadedCache.set(att.url, bytes);
+                    } else {
+                      console.warn(`Background fetch failed for ${att.url}:`, result?.error);
+                    }
+                  } catch (e) {
+                    console.warn(`Could not download attachment ${att.url}:`, e);
+                  }
+                }
+
+                if (bytes) {
+                  zipFiles.push({
+                    name: `${unitFolderName}/assets/${cleanFileName}`,
+                    content: bytes
+                  });
+                  console.log(`Packed asset: ${unitFolderName}/assets/${cleanFileName} (${bytes.length} bytes)`);
+                }
+              }
+            }
+          }
+        }
+      }
+    } else if (exportFormat === 'combined') {
+      notifyProgress(72, 'Generating Markdown documents & offline interactive website...');
+      // 1. Build structured Markdown documentation archive
+      const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope, downloadAssets);
+      zipFiles.push(...markdownFiles);
+
+      // 2. Build single-page interactive HTML application with per-unit asset links
+      const htmlContent = HTMLBuilder.buildOfflineSite({
+        courseInfo: courseInfo,
+        units: units,
+        exportedAt: exportedAt,
+        exportScope: exportScope,
+        downloadAssets: downloadAssets,
+        perUnitAssets: true
+      });
+
+      zipFiles.push({
+        name: 'index.html',
+        content: htmlContent
+      });
+
+      // 3. Fetch attachments and store them strictly inside each unit folder (NO global assets folder)
+      if (downloadAssets) {
+        const downloadedCache = new Map(); // url -> Uint8Array
+        let totalAttachments = 0;
+        units.forEach(u => totalAttachments += (u.attachments ? u.attachments.length : 0));
+        let currentAttachmentIdx = 0;
+
+        for (let unitIdx = 0; unitIdx < units.length; unitIdx++) {
+          const unit = units[unitIdx];
+          const unitFolderName = `${String(unitIdx + 1).padStart(2, '0')}_${MarkdownBuilder.sanitizeFolderName(unit.title)}`;
+
+          if (unit.attachments && unit.attachments.length > 0) {
+            for (const att of unit.attachments) {
+              if (att.url) {
+                currentAttachmentIdx++;
+                const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
+                notifyProgress(
+                  75 + Math.round((currentAttachmentIdx / Math.max(totalAttachments, 1)) * 17),
+                  `Downloading asset (${currentAttachmentIdx}/${totalAttachments}): ${cleanFileName}`
+                );
+
+                let bytes = downloadedCache.get(att.url);
+                if (!bytes) {
+                  try {
+                    const result = await new Promise((resolve) => {
+                      chrome.runtime.sendMessage(
+                        { action: 'FETCH_FILE', url: att.url },
+                        (response) => resolve(response)
+                      );
+                    });
+
+                    if (result && result.success && result.base64) {
+                      const binaryStr = atob(result.base64);
+                      bytes = new Uint8Array(binaryStr.length);
+                      for (let i = 0; i < binaryStr.length; i++) {
+                        bytes[i] = binaryStr.charCodeAt(i);
+                      }
+                      downloadedCache.set(att.url, bytes);
+                    } else {
+                      console.warn(`Background fetch failed for ${att.url}:`, result?.error);
+                    }
+                  } catch (e) {
+                    console.warn(`Could not download attachment ${att.url}:`, e);
+                  }
+                }
+
+                if (bytes) {
+                  zipFiles.push({
+                    name: `${unitFolderName}/assets/${cleanFileName}`,
+                    content: bytes
+                  });
+                  console.log(`Packed combined asset: ${unitFolderName}/assets/${cleanFileName} (${bytes.length} bytes)`);
+                }
+              }
+            }
+          }
+        }
+      }
+    } else {
+      notifyProgress(75, 'Generating offline interactive website...');
+      const htmlContent = HTMLBuilder.buildOfflineSite({
+        courseInfo: courseInfo,
+        units: units,
+        exportedAt: exportedAt,
+        exportScope: exportScope,
+        downloadAssets: downloadAssets
+      });
+
+      zipFiles.push({
+        name: 'index.html',
+        content: htmlContent
+      });
+
+      // Fetch attachment files & embedded PDFs if enabled
+      if (downloadAssets) {
+        const downloadedUrls = new Set();
+        const uniqueAttachments = [];
+        for (const unit of units) {
+          if (unit.attachments && unit.attachments.length > 0) {
+            for (const att of unit.attachments) {
+              if (att.url && !downloadedUrls.has(att.url)) {
+                downloadedUrls.add(att.url);
+                uniqueAttachments.push(att);
+              }
+            }
+          }
+        }
+
+        let currentAttachmentIdx = 0;
+        const totalAttachments = uniqueAttachments.length;
+
+        for (const att of uniqueAttachments) {
+          currentAttachmentIdx++;
+          const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
+          notifyProgress(
+            75 + Math.round((currentAttachmentIdx / Math.max(totalAttachments, 1)) * 15),
+            `Downloading asset (${currentAttachmentIdx}/${totalAttachments}): ${cleanFileName}`
+          );
+
+          try {
+            const result = await new Promise((resolve) => {
+              chrome.runtime.sendMessage(
+                { action: 'FETCH_FILE', url: att.url },
+                (response) => resolve(response)
+              );
+            });
+
+            if (result && result.success && result.base64) {
+              const binaryStr = atob(result.base64);
+              const bytes = new Uint8Array(binaryStr.length);
+              for (let i = 0; i < binaryStr.length; i++) {
+                bytes[i] = binaryStr.charCodeAt(i);
+              }
+
+              zipFiles.push({
+                name: `assets/${cleanFileName}`,
+                content: bytes
+              });
+              console.log(`Packed asset: assets/${cleanFileName} (${bytes.length} bytes)`);
+            } else {
+              console.warn(`Background fetch failed for ${att.url}:`, result?.error);
+            }
+          } catch (e) {
+            console.warn(`Could not download attachment ${att.url}:`, e);
+          }
+        }
+      }
+    }
+
+    notifyProgress(91, 'Generating course metadata manifest...');
+    try {
+      const [studentProfile, instructorName] = await Promise.all([
+        D2LApi.getStudentProfile().catch(() => ({ fullName: '', initials: 'myk' })),
+        D2LApi.getCourseInstructor(orgUnitId).catch(() => 'Instructor')
+      ]);
+      const courseMetadata = D2LApi.buildCourseMetadata(courseInfo, dropboxFolders, studentProfile, instructorName);
+      zipFiles.push({
+        name: 'course_metadata.json',
+        content: JSON.stringify(courseMetadata, null, 2)
+      });
+      console.log('[Course Exporter] Packed course_metadata.json into package:', courseMetadata);
+    } catch (me) {
+      console.warn('[Course Exporter] Could not build course_metadata.json:', me);
+    }
+
+    return { courseInfo, units, zipFiles };
   }
 
   async function runExportPipeline(orgUnitId, downloadAssets, exportFormat, exportScope, sendResponse) {
@@ -177,419 +693,13 @@
       console.log(`Starting export pipeline for OrgUnitID: ${orgUnitId} (Format: ${exportFormat}, Scope: ${exportScope})`);
       emitProgress(8, 'Fetching course Table of Contents...');
 
-      const courseInfo = await D2LApi.getCourseInfo(orgUnitId);
-      const tocData = await D2LApi.getTOC(orgUnitId);
-      if (!tocData) {
-        throw new Error('Unable to retrieve course Table of Contents.');
-      }
-
-      let dropboxFolders = [];
-      let discussionForums = [];
-      let rubricsList = [];
-      const rubricsMap = {};
-      const discussionTopics = [];
-      let quizzesList = [];
-
-      // In Shareable mode, we skip fetching assignment rubrics, dropbox folders, and quizzes
-      if (exportScope !== 'shareable') {
-        emitProgress(16, 'Querying discussions, assignments, rubrics & quizzes...');
-        console.log('Fetching course assignment activities, discussions, rubrics and quizzes from D2L API...');
-        try {
-          const [dropboxes, forums, rubrics, quizzesValence, quizzesLms] = await Promise.all([
-            D2LApi.getDropboxFolders(orgUnitId).catch(err => { console.warn('Dropbox folders API failed:', err); return []; }),
-            D2LApi.getDiscussionForums(orgUnitId).catch(err => { console.warn('Discussion forums API failed:', err); return []; }),
-            D2LApi.getRubricsList(orgUnitId).catch(err => { console.warn('Rubrics list API failed:', err); return []; }),
-            D2LApi.getQuizzesList(orgUnitId).catch(err => { console.warn('Quizzes list API failed:', err); return []; }),
-            D2LApi.getQuizzesFromLms(orgUnitId).catch(err => { console.warn('Quizzes LMS scraper failed:', err); return []; })
-          ]);
-          dropboxFolders = dropboxes || [];
-          discussionForums = forums || [];
-          rubricsList = rubrics || [];
-          quizzesList = [...(quizzesValence || []), ...(quizzesLms || [])];
-
-          if (discussionForums.length > 0) {
-            await Promise.all(discussionForums.map(async (forum) => {
-              try {
-                const topics = await D2LApi.getDiscussionTopics(orgUnitId, forum.ForumId);
-                if (topics) {
-                  topics.forEach(t => {
-                    t.ForumId = forum.ForumId;
-                    discussionTopics.push(t);
-                  });
-                }
-              } catch (e) {
-                console.warn(`Failed to fetch topics for forum ${forum.ForumId}:`, e);
-              }
-            }));
-          }
-
-          // 1. Extract active DOM rubric if present on current tab page
-          try {
-            if (typeof document !== 'undefined') {
-              const domRubric = D2LApi.extractRubricFromDOM(document);
-              if (domRubric) {
-                const domId = domRubric.RubricId || 'active_page_dom_rubric';
-                rubricsMap[domId] = domRubric;
-                if (domRubric.Name) {
-                  rubricsMap[domRubric.Name] = domRubric;
-                }
-                console.log('Discovered active page DOM rubric:', domRubric.Name);
-              }
-            }
-          } catch (e) {
-            console.warn('DOM rubric extraction error in export tab:', e);
-          }
-
-          // 2. Collect all rubric IDs from rubricsList, dropboxes, and discussion topics
-          const allRubricIds = new Set();
-          if (Array.isArray(rubricsList)) {
-            rubricsList.forEach(r => { if (r && r.RubricId) allRubricIds.add(r.RubricId); });
-          }
-          if (Array.isArray(dropboxFolders)) {
-            dropboxFolders.forEach(f => {
-              D2LApi.extractRubricIds(f).forEach(id => allRubricIds.add(id));
-            });
-          }
-          if (Array.isArray(discussionTopics)) {
-            discussionTopics.forEach(t => {
-              D2LApi.extractRubricIds(t).forEach(id => allRubricIds.add(id));
-            });
-          }
-
-          // 3. Query Valence REST API v1.97 /rubrics/?objectType={Discussion|Dropbox}&objectId={activity_id}
-          // for all dropbox folders and discussion topics (mirrors UoPeople Grader Pro Valence rubric extraction)
-          const rubricIdToActivityKeys = new Map();
-
-          if (Array.isArray(dropboxFolders) && dropboxFolders.length > 0) {
-            emitProgress(18, 'Resolving assignment rubrics via Valence API...');
-            await Promise.all(dropboxFolders.map(async (folder) => {
-              const folderId = folder.Id || folder.FolderId;
-              if (!folderId) return;
-              try {
-                const actRubrics = await D2LApi.getRubricsForActivity(orgUnitId, 'Dropbox', folderId);
-                if (Array.isArray(actRubrics) && actRubrics.length > 0) {
-                  for (const r of actRubrics) {
-                    const rid = r.RubricId || r.Id;
-                    if (rid) {
-                      allRubricIds.add(rid);
-                      const actKey = `dropbox_${folderId}`;
-                      rubricsMap[actKey] = r;
-                      rubricsMap[rid] = r;
-                      if (r.Name) rubricsMap[r.Name] = r;
-                      if (!rubricIdToActivityKeys.has(rid)) rubricIdToActivityKeys.set(rid, new Set());
-                      rubricIdToActivityKeys.get(rid).add(actKey);
-                    }
-                  }
-                }
-              } catch (e) {
-                console.warn(`Failed to fetch activity rubrics for dropbox ${folderId}:`, e);
-              }
-            }));
-          }
-
-          if (Array.isArray(discussionTopics) && discussionTopics.length > 0) {
-            emitProgress(21, 'Resolving discussion rubrics via Valence API...');
-            await Promise.all(discussionTopics.map(async (topic) => {
-              const topicId = topic.TopicId || topic.Id;
-              if (!topicId) return;
-              try {
-                const actRubrics = await D2LApi.getRubricsForActivity(orgUnitId, 'Discussion', topicId);
-                if (Array.isArray(actRubrics) && actRubrics.length > 0) {
-                  for (const r of actRubrics) {
-                    const rid = r.RubricId || r.Id;
-                    if (rid) {
-                      allRubricIds.add(rid);
-                      const actKey = `discussion_${topicId}`;
-                      rubricsMap[actKey] = r;
-                      rubricsMap[rid] = r;
-                      if (r.Name) rubricsMap[r.Name] = r;
-                      if (!rubricIdToActivityKeys.has(rid)) rubricIdToActivityKeys.set(rid, new Set());
-                      rubricIdToActivityKeys.get(rid).add(actKey);
-                    }
-                  }
-                }
-              } catch (e) {
-                console.warn(`Failed to fetch activity rubrics for discussion ${topicId}:`, e);
-              }
-            }));
-          }
-
-          // 4. Resolve details for any rubric IDs lacking criteria groups
-          if (allRubricIds.size > 0) {
-            console.log(`Discovered ${allRubricIds.size} unique rubric IDs to resolve:`, Array.from(allRubricIds));
-            await Promise.all(Array.from(allRubricIds).map(async (rid) => {
-              try {
-                const existing = rubricsMap[rid];
-                if (!existing || !existing.CriteriaGroups || existing.CriteriaGroups.length === 0) {
-                  const details = await D2LApi.getRubricDetails(orgUnitId, rid);
-                  if (details) {
-                    rubricsMap[rid] = details;
-                    if (details.Name) rubricsMap[details.Name] = details;
-                    const linkedKeys = rubricIdToActivityKeys.get(rid);
-                    if (linkedKeys) {
-                      for (const k of linkedKeys) {
-                        rubricsMap[k] = details;
-                      }
-                    }
-                  }
-                }
-              } catch (e) {
-                console.warn(`Failed to fetch details for rubric ${rid}:`, e);
-              }
-            }));
-          }
-        } catch (e) {
-          console.warn('Metadata pre-fetching encountered errors:', e);
-        }
-      }
-
-      emitProgress(25, exportScope === 'shareable' ? 'Extracting unit overviews & reading assignments...' : 'Extracting unit contents & quizzes...');
-      const units = await D2LApi.parseModules(
-        tocData,
-        { dropboxFolders, discussionTopics, rubricsMap, quizzesList, orgUnitId, exportScope, downloadAssets },
-        (progress, statusText) => {
-          emitProgress(progress, statusText || (exportScope === 'shareable' ? 'Extracting unit overviews & reading assignments...' : 'Extracting unit contents & quizzes...'));
-          console.log(`Extraction progress: ${progress}% - ${statusText || ''}`);
-        }
+      const { courseInfo, units, zipFiles } = await extractCourseFiles(
+        orgUnitId,
+        downloadAssets,
+        exportFormat,
+        exportScope,
+        (progress, status) => emitProgress(progress, status)
       );
-
-      const exportedAt = new Date().toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-      });
-
-      const zipFiles = [];
-
-      if (exportFormat === 'markdown') {
-        emitProgress(75, 'Generating Markdown documents...');
-        const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope, downloadAssets);
-        zipFiles.push(...markdownFiles);
-
-        // Fetch attachment files & embedded PDFs if enabled into per-unit folders
-        if (downloadAssets) {
-          const downloadedCache = new Map(); // url -> Uint8Array
-          let totalAttachments = 0;
-          units.forEach(u => totalAttachments += (u.attachments ? u.attachments.length : 0));
-          let currentAttachmentIdx = 0;
-
-          for (let unitIdx = 0; unitIdx < units.length; unitIdx++) {
-            const unit = units[unitIdx];
-            const unitFolderName = `${String(unitIdx + 1).padStart(2, '0')}_${MarkdownBuilder.sanitizeFolderName(unit.title)}`;
-
-            if (unit.attachments && unit.attachments.length > 0) {
-              for (const att of unit.attachments) {
-                if (att.url) {
-                  currentAttachmentIdx++;
-                  const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
-                  emitProgress(
-                    75 + Math.round((currentAttachmentIdx / Math.max(totalAttachments, 1)) * 15),
-                    `Downloading asset (${currentAttachmentIdx}/${totalAttachments}): ${cleanFileName}`
-                  );
-
-                  let bytes = downloadedCache.get(att.url);
-                  if (!bytes) {
-                    try {
-                      const result = await new Promise((resolve) => {
-                        chrome.runtime.sendMessage(
-                          { action: 'FETCH_FILE', url: att.url },
-                          (response) => resolve(response)
-                        );
-                      });
-
-                      if (result && result.success && result.base64) {
-                        const binaryStr = atob(result.base64);
-                        bytes = new Uint8Array(binaryStr.length);
-                        for (let i = 0; i < binaryStr.length; i++) {
-                          bytes[i] = binaryStr.charCodeAt(i);
-                        }
-                        downloadedCache.set(att.url, bytes);
-                      } else {
-                        console.warn(`Background fetch failed for ${att.url}:`, result?.error);
-                      }
-                    } catch (e) {
-                      console.warn(`Could not download attachment ${att.url}:`, e);
-                    }
-                  }
-
-                  if (bytes) {
-                    zipFiles.push({
-                      name: `${unitFolderName}/assets/${cleanFileName}`,
-                      content: bytes
-                    });
-                    console.log(`Packed asset: ${unitFolderName}/assets/${cleanFileName} (${bytes.length} bytes)`);
-                  }
-                }
-              }
-            }
-          }
-        }
-      } else if (exportFormat === 'combined') {
-        emitProgress(72, 'Generating Markdown documents & offline interactive website...');
-        // 1. Build structured Markdown documentation archive
-        const markdownFiles = MarkdownBuilder.buildMarkdownZip(courseInfo, units, exportScope, downloadAssets);
-        zipFiles.push(...markdownFiles);
-
-        // 2. Build single-page interactive HTML application with per-unit asset links
-        const htmlContent = HTMLBuilder.buildOfflineSite({
-          courseInfo: courseInfo,
-          units: units,
-          exportedAt: exportedAt,
-          exportScope: exportScope,
-          downloadAssets: downloadAssets,
-          perUnitAssets: true
-        });
-
-        zipFiles.push({
-          name: 'index.html',
-          content: htmlContent
-        });
-
-        // 3. Fetch attachments and store them strictly inside each unit folder (NO global assets folder)
-        if (downloadAssets) {
-          const downloadedCache = new Map(); // url -> Uint8Array
-          let totalAttachments = 0;
-          units.forEach(u => totalAttachments += (u.attachments ? u.attachments.length : 0));
-          let currentAttachmentIdx = 0;
-
-          for (let unitIdx = 0; unitIdx < units.length; unitIdx++) {
-            const unit = units[unitIdx];
-            const unitFolderName = `${String(unitIdx + 1).padStart(2, '0')}_${MarkdownBuilder.sanitizeFolderName(unit.title)}`;
-
-            if (unit.attachments && unit.attachments.length > 0) {
-              for (const att of unit.attachments) {
-                if (att.url) {
-                  currentAttachmentIdx++;
-                  const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
-                  emitProgress(
-                    75 + Math.round((currentAttachmentIdx / Math.max(totalAttachments, 1)) * 17),
-                    `Downloading asset (${currentAttachmentIdx}/${totalAttachments}): ${cleanFileName}`
-                  );
-
-                  let bytes = downloadedCache.get(att.url);
-                  if (!bytes) {
-                    try {
-                      const result = await new Promise((resolve) => {
-                        chrome.runtime.sendMessage(
-                          { action: 'FETCH_FILE', url: att.url },
-                          (response) => resolve(response)
-                        );
-                      });
-
-                      if (result && result.success && result.base64) {
-                        const binaryStr = atob(result.base64);
-                        bytes = new Uint8Array(binaryStr.length);
-                        for (let i = 0; i < binaryStr.length; i++) {
-                          bytes[i] = binaryStr.charCodeAt(i);
-                        }
-                        downloadedCache.set(att.url, bytes);
-                      } else {
-                        console.warn(`Background fetch failed for ${att.url}:`, result?.error);
-                      }
-                    } catch (e) {
-                      console.warn(`Could not download attachment ${att.url}:`, e);
-                    }
-                  }
-
-                  if (bytes) {
-                    zipFiles.push({
-                      name: `${unitFolderName}/assets/${cleanFileName}`,
-                      content: bytes
-                    });
-                    console.log(`Packed combined asset: ${unitFolderName}/assets/${cleanFileName} (${bytes.length} bytes)`);
-                  }
-                }
-              }
-            }
-          }
-        }
-      } else {
-        emitProgress(75, 'Generating offline interactive website...');
-        const htmlContent = HTMLBuilder.buildOfflineSite({
-          courseInfo: courseInfo,
-          units: units,
-          exportedAt: exportedAt,
-          exportScope: exportScope,
-          downloadAssets: downloadAssets
-        });
-
-        zipFiles.push({
-          name: 'index.html',
-          content: htmlContent
-        });
-
-        // Fetch attachment files & embedded PDFs if enabled
-        if (downloadAssets) {
-          const downloadedUrls = new Set();
-          const uniqueAttachments = [];
-          for (const unit of units) {
-            if (unit.attachments && unit.attachments.length > 0) {
-              for (const att of unit.attachments) {
-                if (att.url && !downloadedUrls.has(att.url)) {
-                  downloadedUrls.add(att.url);
-                  uniqueAttachments.push(att);
-                }
-              }
-            }
-          }
-
-          let currentAttachmentIdx = 0;
-          const totalAttachments = uniqueAttachments.length;
-
-          for (const att of uniqueAttachments) {
-            currentAttachmentIdx++;
-            const cleanFileName = att.localFileName || D2LApi.sanitizeFileName(att.title || 'attachment');
-            emitProgress(
-              75 + Math.round((currentAttachmentIdx / Math.max(totalAttachments, 1)) * 15),
-              `Downloading asset (${currentAttachmentIdx}/${totalAttachments}): ${cleanFileName}`
-            );
-
-            try {
-              const result = await new Promise((resolve) => {
-                chrome.runtime.sendMessage(
-                  { action: 'FETCH_FILE', url: att.url },
-                  (response) => resolve(response)
-                );
-              });
-
-              if (result && result.success && result.base64) {
-                // Decode base64 back to Uint8Array
-                const binaryStr = atob(result.base64);
-                const bytes = new Uint8Array(binaryStr.length);
-                for (let i = 0; i < binaryStr.length; i++) {
-                  bytes[i] = binaryStr.charCodeAt(i);
-                }
-
-                zipFiles.push({
-                  name: `assets/${cleanFileName}`,
-                  content: bytes
-                });
-                console.log(`Packed asset: assets/${cleanFileName} (${bytes.length} bytes)`);
-              } else {
-                console.warn(`Background fetch failed for ${att.url}:`, result?.error);
-              }
-            } catch (e) {
-              console.warn(`Could not download attachment ${att.url}:`, e);
-            }
-          }
-        }
-      }
-
-      emitProgress(91, 'Generating course metadata manifest...');
-      try {
-        const [studentProfile, instructorName] = await Promise.all([
-          D2LApi.getStudentProfile().catch(() => ({ fullName: '', initials: 'myk' })),
-          D2LApi.getCourseInstructor(orgUnitId).catch(() => 'Instructor')
-        ]);
-        const courseMetadata = D2LApi.buildCourseMetadata(courseInfo, dropboxFolders, studentProfile, instructorName);
-        zipFiles.push({
-          name: 'course_metadata.json',
-          content: JSON.stringify(courseMetadata, null, 2)
-        });
-        console.log('[Course Exporter] Packed course_metadata.json into package:', courseMetadata);
-      } catch (me) {
-        console.warn('[Course Exporter] Could not build course_metadata.json:', me);
-      }
 
       emitProgress(93, 'Compressing package into ZIP archive...');
       const zipBlob = await ZipBuilder.createZip(zipFiles);
@@ -601,25 +711,233 @@
         : (exportScope === 'shareable' ? 'StudyGuide_Offline' : 'Offline');
 
       emitProgress(98, 'Packaging complete! Sending to downloads...');
-      const reader = new FileReader();
-      reader.onloadend = function () {
-        const dataUrl = reader.result;
-        chrome.runtime.sendMessage({
-          action: 'TRIGGER_ZIP_DOWNLOAD',
-          courseId: courseInfo.id,
-          courseName: courseInfo.name,
-          zipDataUrl: dataUrl,
-          suffix: downloadSuffix
-        }, (res) => {
-          emitProgress(100, `Done! Extracted ${units.length} units.`);
-          sendResponse({ success: true, unitsCount: units.length });
-        });
-      };
-      reader.readAsDataURL(zipBlob);
+      const dataUrl = await blobToDataUrl(zipBlob);
+      chrome.runtime.sendMessage({
+        action: 'TRIGGER_ZIP_DOWNLOAD',
+        courseId: courseInfo.id,
+        courseName: courseInfo.name,
+        zipDataUrl: dataUrl,
+        suffix: downloadSuffix
+      }, (res) => {
+        emitProgress(100, `Done! Extracted ${units.length} units.`);
+        sendResponse({ success: true, unitsCount: units.length });
+      });
 
     } catch (err) {
       console.error('Export Pipeline Error:', err);
       sendResponse({ success: false, error: err.message });
+    }
+  }
+
+  let isBatchExportingInProgress = false;
+
+  async function runBatchExportPipeline(courses, downloadAssets, exportFormat, exportScope, sendResponse) {
+    if (isBatchExportingInProgress) {
+      if (typeof sendResponse === 'function') {
+        sendResponse({ success: false, error: 'A batch export is already in progress.' });
+      }
+      return;
+    }
+
+    isBatchExportingInProgress = true;
+    const totalCourses = courses.length;
+    const masterZipFiles = [];
+    const processedCoursesSummary = [];
+    let successfulCoursesCount = 0;
+
+    try {
+      console.log(`[Batch Export] Starting multi-course batch export of ${totalCourses} courses (Format: ${exportFormat}, Scope: ${exportScope})...`);
+      emitBatchProgress(2, `Starting batch export of ${totalCourses} course${totalCourses > 1 ? 's' : ''}...`, 0, totalCourses, 'Initializing');
+      showCompletionToast('Batch Course Exporter', 0, totalCourses, 2, `Starting export of ${totalCourses} courses...`, false);
+
+      const exportedAt = new Date().toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+
+      const courseSlice = 85 / Math.max(totalCourses, 1);
+
+      for (let idx = 0; idx < totalCourses; idx++) {
+        const course = courses[idx];
+        const ouId = String(course.id || course.orgUnitId);
+        const courseName = course.name || `Course ${ouId}`;
+        const prefix = String(idx + 1).padStart(2, '0');
+        const sanitizedName = sanitizeCourseFolderName(courseName, ouId, idx + 1);
+        const folderName = `${prefix}_${sanitizedName}`;
+
+        const baseCoursePercent = Math.round(idx * courseSlice);
+        emitBatchProgress(
+          baseCoursePercent,
+          `[${idx + 1}/${totalCourses}] Initializing ${courseName}...`,
+          idx + 1,
+          totalCourses,
+          courseName
+        );
+        showCompletionToast(
+          `[${idx + 1}/${totalCourses}] ${courseName}`,
+          idx,
+          totalCourses,
+          baseCoursePercent,
+          'Initializing course extraction...',
+          false
+        );
+
+        try {
+          console.log(`[Batch Export] Processing course [${idx + 1}/${totalCourses}]: ${courseName} (${ouId})...`);
+
+          const { courseInfo, units, zipFiles } = await extractCourseFiles(
+            ouId,
+            downloadAssets,
+            exportFormat,
+            exportScope,
+            (coursePct, statusText) => {
+              const currentOverallPct = Math.round(baseCoursePercent + ((coursePct / 100) * courseSlice));
+              emitBatchProgress(
+                currentOverallPct,
+                `[${idx + 1}/${totalCourses}] ${statusText}`,
+                idx + 1,
+                totalCourses,
+                courseName
+              );
+              showCompletionToast(
+                `[${idx + 1}/${totalCourses}] ${courseName}`,
+                idx,
+                totalCourses,
+                currentOverallPct,
+                statusText,
+                false
+              );
+            }
+          );
+
+          // Namespace every extracted course file under folderName/
+          for (const file of zipFiles) {
+            masterZipFiles.push({
+              name: `${folderName}/${file.name}`,
+              content: file.content
+            });
+          }
+
+          const effectiveCode = course.code || (courseInfo && courseInfo.code) || extractCourseCode(courseInfo?.name || courseName);
+
+          processedCoursesSummary.push({
+            id: ouId,
+            folderName: folderName,
+            name: (courseInfo && courseInfo.name) || courseName,
+            code: effectiveCode,
+            unitsCount: units.length,
+            status: 'success'
+          });
+
+          successfulCoursesCount++;
+          console.log(`[Batch Export] Course [${idx + 1}/${totalCourses}] ${courseName} successfully extracted (${units.length} units, ${zipFiles.length} files).`);
+
+        } catch (courseErr) {
+          console.error(`[Batch Export] Error extracting course ${courseName} (${ouId}):`, courseErr);
+
+          // Isolate error: write EXPORT_ERROR.txt into course folder
+          const errorContent = [
+            `Course Export Failed: ${courseName} (ID: ${ouId})`,
+            `Timestamp: ${new Date().toISOString()}`,
+            `Scope: ${exportScope}`,
+            `Format: ${exportFormat}`,
+            `Error Message: ${courseErr.message}`,
+            '',
+            'Stack Trace:',
+            courseErr.stack || 'No stack trace available.'
+          ].join('\n');
+
+          masterZipFiles.push({
+            name: `${folderName}/EXPORT_ERROR.txt`,
+            content: errorContent
+          });
+
+          processedCoursesSummary.push({
+            id: ouId,
+            folderName: folderName,
+            name: courseName,
+            code: course.code || extractCourseCode(courseName),
+            unitsCount: 0,
+            status: 'error',
+            error: courseErr.message,
+            failed: true
+          });
+
+          showCompletionToast(
+            `[${idx + 1}/${totalCourses}] ${courseName}`,
+            idx + 1,
+            totalCourses,
+            Math.round((idx + 1) * courseSlice),
+            `Export failed: ${courseErr.message}`,
+            false
+          );
+        }
+      }
+
+      // Step: Generate Master Launcher Portal (index.html at root)
+      emitBatchProgress(88, 'Generating Master Launcher Portal (index.html)...', totalCourses, totalCourses, 'Master Portal');
+      showCompletionToast('Master Course Exporter', totalCourses, totalCourses, 88, 'Generating Master Launcher Portal...', false);
+
+      const masterPortalHtml = HTMLBuilder.buildMasterPortal({
+        courses: processedCoursesSummary,
+        exportedAt: exportedAt,
+        exportScope: exportScope,
+        downloadAssets: downloadAssets,
+        exportFormat: exportFormat === 'combined' ? 'all' : (exportFormat === 'markdown' ? 'md' : 'html')
+      });
+
+      masterZipFiles.push({
+        name: 'index.html',
+        content: masterPortalHtml
+      });
+
+      // Step: Compress Master ZIP
+      emitBatchProgress(92, `Compressing ${masterZipFiles.length} files into Master ZIP...`, totalCourses, totalCourses, 'Compressing');
+      showCompletionToast('Master Course Exporter', totalCourses, totalCourses, 92, 'Compressing Master ZIP archive...', false);
+
+      const zipBlob = await ZipBuilder.createZip(masterZipFiles);
+
+      // Step: Trigger download
+      emitBatchProgress(98, 'Packaging complete! Sending Master ZIP to downloads...', totalCourses, totalCourses, 'Downloading');
+      showCompletionToast('Master Course Exporter', totalCourses, totalCourses, 98, 'Sending Master ZIP to browser downloads...', false);
+
+      const dataUrl = await blobToDataUrl(zipBlob);
+      const downloadSuffix = exportScope === 'shareable' ? 'StudyGuide' : 'Offline';
+
+      await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          action: 'TRIGGER_ZIP_DOWNLOAD',
+          courseId: 'all',
+          courseName: 'All_Courses',
+          zipDataUrl: dataUrl,
+          suffix: downloadSuffix
+        }, (res) => {
+          resolve(res);
+        });
+      });
+
+      const finalSummary = `Done! Exported ${successfulCoursesCount} of ${totalCourses} course${totalCourses > 1 ? 's' : ''}.`;
+      emitBatchProgress(100, finalSummary, totalCourses, totalCourses, 'Complete');
+      showCompletionToast('Master Batch Export Complete', successfulCoursesCount, totalCourses, 100, finalSummary, true);
+
+      if (typeof sendResponse === 'function') {
+        sendResponse({
+          success: true,
+          exportedCount: successfulCoursesCount,
+          totalCourses: totalCourses,
+          courses: processedCoursesSummary
+        });
+      }
+
+    } catch (err) {
+      console.error('[Batch Export] Fatal error during batch export pipeline:', err);
+      showCompletionToast('Master Batch Export Failed', 0, totalCourses, 0, `Error: ${err.message}`, true);
+      if (typeof sendResponse === 'function') {
+        sendResponse({ success: false, error: err.message });
+      }
+    } finally {
+      isBatchExportingInProgress = false;
     }
   }
 
@@ -1024,9 +1342,11 @@
     }, delay);
   }
 
-  // Initialize checks on document idle
-  debouncedAutoMark(1200);
-  debouncedAutoDownload(2200);
+  // Initialize checks on document idle (browser extension runtime only)
+  if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.body && !window.__TEST_ENV__) {
+    debouncedAutoMark(1200);
+    debouncedAutoDownload(2200);
+  }
 
   // Synchronize when settings or flags are changed in options page or popup
   if (chrome.storage && chrome.storage.onChanged) {
@@ -1049,44 +1369,65 @@
   }
 
   // Monitor URL changes for Single Page Application (SPA) navigation inside Brightspace
-  let lastObservedUrl = window.location.href;
+  let lastObservedUrl = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
   const onUrlChange = () => {
-    if (window.location.href !== lastObservedUrl) {
+    if (typeof window !== 'undefined' && window.location && window.location.href !== lastObservedUrl) {
       lastObservedUrl = window.location.href;
       debouncedAutoMark(800);
       debouncedAutoDownload(2000);
     }
   };
 
-  window.addEventListener('popstate', onUrlChange);
-  window.addEventListener('hashchange', onUrlChange);
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('popstate', onUrlChange);
+    window.addEventListener('hashchange', onUrlChange);
 
-  // Observe title for client-side navigation in Brightspace
-  try {
-    const titleEl = document.querySelector('title');
-    if (titleEl) {
-      new MutationObserver(() => onUrlChange()).observe(titleEl, { childList: true, characterData: true, subtree: true });
-    }
-  } catch (e) {}
+    // Observe title for client-side navigation in Brightspace
+    try {
+      if (typeof document !== 'undefined') {
+        const titleEl = document.querySelector('title');
+        if (titleEl && typeof MutationObserver !== 'undefined') {
+          new MutationObserver(() => onUrlChange()).observe(titleEl, { childList: true, characterData: true, subtree: true });
+        }
+      }
+    } catch (e) {}
 
-  try {
-    const origPushState = history.pushState;
-    if (origPushState) {
-      history.pushState = function () {
-        origPushState.apply(this, arguments);
-        onUrlChange();
-      };
-    }
-    const origReplaceState = history.replaceState;
-    if (origReplaceState) {
-      history.replaceState = function () {
-        origReplaceState.apply(this, arguments);
-        onUrlChange();
-      };
-    }
-  } catch (e) {}
+    try {
+      if (typeof history !== 'undefined') {
+        const origPushState = history.pushState;
+        if (origPushState) {
+          history.pushState = function () {
+            origPushState.apply(this, arguments);
+            onUrlChange();
+          };
+        }
+        const origReplaceState = history.replaceState;
+        if (origReplaceState) {
+          history.replaceState = function () {
+            origReplaceState.apply(this, arguments);
+            onUrlChange();
+          };
+        }
+      }
+    } catch (e) {}
 
-  setInterval(onUrlChange, 2500);
+    setInterval(onUrlChange, 2500);
+  }
+
+  // Export functions for testing & consumption
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      runBatchExportPipeline,
+      extractCourseFiles,
+      sanitizeCourseFolderName,
+      extractCourseCode,
+      detectOrgUnitId
+    };
+  }
+  if (typeof window !== 'undefined') {
+    window.runBatchExportPipeline = runBatchExportPipeline;
+    window.sanitizeCourseFolderName = sanitizeCourseFolderName;
+  }
 
 })();
 
