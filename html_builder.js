@@ -3360,5 +3360,833 @@ const HTMLBuilder = {
 </html>`;
 
     return htmlContent;
+  },
+
+  /**
+   * Generates a modern, responsive, offline Master Launcher Portal (index.html)
+   * linking to each exported course in a multi-course batch archive.
+   *
+   * @param {Object} data
+   * @param {Array<Object>} data.courses - Array of course objects ({ id, name, code, folderName, unitsCount, error })
+   * @param {string} [data.exportedAt] - Formatted timestamp of export
+   * @param {string} [data.exportScope] - 'full' or 'shareable'
+   * @param {boolean} [data.downloadAssets] - Whether assets were downloaded
+   * @param {string} [data.exportFormat] - 'all', 'html', or 'md'
+   * @returns {string} Fully self-contained HTML page
+   */
+  buildMasterPortal(data) {
+    const {
+      courses = [],
+      exportedAt = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+      exportScope = 'full',
+      downloadAssets = true,
+      exportFormat = 'all'
+    } = data || {};
+
+    const isShareable = exportScope === 'shareable';
+
+    const escapeHtml = (str) => {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    };
+
+    const courseCardsHtml = (courses || []).map((course, idx) => {
+      const name = escapeHtml(course.name || course.title || course.folderName || ('Course ' + (idx + 1)));
+      const code = escapeHtml(course.code || (course.name ? (course.name.match(/^[A-Z]{2,4}\s*\d{4}/i) || [''])[0] : ''));
+      const folderName = escapeHtml(course.folderName || '');
+      const unitsCount = typeof course.unitsCount === 'number'
+        ? course.unitsCount
+        : (Array.isArray(course.units) ? course.units.length : 8);
+      const isFailed = Boolean(course.error || course.failed);
+      const hasHtml = exportFormat !== 'md' && !isFailed;
+      const primaryLink = hasHtml
+        ? `./${folderName}/index.html`
+        : `./${folderName}/01_Overview.md`;
+
+      const secondaryLinksHtml = [];
+      if (hasHtml && exportFormat === 'all') {
+        secondaryLinksHtml.push(`<a href="./${folderName}/01_Overview.md" class="course-link-secondary" title="View Markdown Notes">📝 Notes</a>`);
+      }
+      secondaryLinksHtml.push(`<a href="./${folderName}/" class="course-link-secondary" title="Browse Course Folder">📁 Files</a>`);
+
+      return `
+      <article class="course-card" data-code="${code.toLowerCase()}" data-title="${name.toLowerCase()}">
+        <div class="course-card-top">
+          <div class="course-badges">
+            ${code ? `<span class="badge badge-code">${code}</span>` : ''}
+            <span class="badge badge-units">${unitsCount} Units</span>
+            ${isFailed ? '<span class="badge badge-error">Export Incomplete</span>' : ''}
+          </div>
+          <span class="course-idx">#${String(idx + 1).padStart(2, '0')}</span>
+        </div>
+        <h2 class="course-title" title="${name}">${name}</h2>
+        <div class="course-meta">
+          <div class="course-folder-path" title="${folderName}">
+            <svg class="meta-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            <span>./${folderName}</span>
+          </div>
+        </div>
+        <div class="course-actions">
+          <a href="${primaryLink}" class="course-launch-btn">
+            <span>${hasHtml ? 'Launch Course App' : 'View Markdown Study Guide'}</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </a>
+          ${secondaryLinksHtml.length > 0 ? `<div class="course-secondary-actions">${secondaryLinksHtml.join('')}</div>` : ''}
+        </div>
+      </article>`;
+    }).join('\n');
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>University of the People - Master Course Portal</title>
+  <style>
+    :root {
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-xl: 18px;
+      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    :root[data-theme="dark"] {
+      --bg-body: #0f172a;
+      --bg-header: rgba(15, 23, 42, 0.85);
+      --bg-card: #1e293b;
+      --bg-card-hover: #26354a;
+      --bg-badge: #334155;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-card: rgba(255, 255, 255, 0.1);
+      --border-card-hover: rgba(231, 79, 115, 0.45);
+      --text-main: #f8fafc;
+      --text-secondary: #cbd5e1;
+      --text-muted: #94a3b8;
+      --accent: #e74f73;
+      --accent-hover: #f43f5e;
+      --accent-soft: rgba(231, 79, 115, 0.12);
+      --accent-glow: rgba(231, 79, 115, 0.25);
+      --accent-plum: #8b3c64;
+      --accent-indigo: #6366f1;
+      --success: #10b981;
+      --success-soft: rgba(16, 185, 129, 0.15);
+      --warning: #f59e0b;
+      --warning-soft: rgba(245, 158, 11, 0.15);
+      --error: #ef4444;
+      --error-soft: rgba(239, 68, 68, 0.15);
+      --card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.35);
+      --card-shadow-hover: 0 12px 30px -4px rgba(0, 0, 0, 0.5), 0 0 20px -2px rgba(231, 79, 115, 0.2);
+    }
+
+    :root[data-theme="light"] {
+      --bg-body: #f8fafc;
+      --bg-header: rgba(255, 255, 255, 0.88);
+      --bg-card: #ffffff;
+      --bg-card-hover: #f1f5f9;
+      --bg-badge: #e2e8f0;
+      --border-subtle: #e2e8f0;
+      --border-card: #cbd5e1;
+      --border-card-hover: rgba(231, 79, 115, 0.55);
+      --text-main: #0f172a;
+      --text-secondary: #334155;
+      --text-muted: #64748b;
+      --accent: #e11d48;
+      --accent-hover: #be123c;
+      --accent-soft: rgba(225, 29, 72, 0.08);
+      --accent-glow: rgba(225, 29, 72, 0.2);
+      --accent-plum: #701a75;
+      --accent-indigo: #4f46e5;
+      --success: #059669;
+      --success-soft: rgba(5, 150, 105, 0.1);
+      --warning: #d97706;
+      --warning-soft: rgba(217, 119, 6, 0.1);
+      --error: #dc2626;
+      --error-soft: rgba(220, 38, 38, 0.1);
+      --card-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.06);
+      --card-shadow-hover: 0 12px 28px -4px rgba(0, 0, 0, 0.12), 0 0 16px -2px rgba(225, 29, 72, 0.15);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      width: 100%;
+    }
+
+    /* Navbar */
+    .portal-nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: var(--bg-header);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 12px 0;
+    }
+
+    .portal-nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .portal-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-icon-wrapper {
+      width: 38px;
+      height: 38px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-plum) 60%, var(--accent-indigo) 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      box-shadow: 0 2px 10px var(--accent-glow);
+      flex-shrink: 0;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+    }
+
+    .brand-sub {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .portal-nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-icon {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: var(--transition);
+      text-decoration: none;
+    }
+
+    .btn-icon:hover {
+      background: var(--bg-card-hover);
+      color: var(--text-main);
+      border-color: var(--accent);
+    }
+
+    :root[data-theme="dark"] #theme-icon-light { display: none; }
+    :root[data-theme="dark"] #theme-icon-dark { display: block; }
+    :root[data-theme="light"] #theme-icon-light { display: block; }
+    :root[data-theme="light"] #theme-icon-dark { display: none; }
+
+    /* Hero */
+    .hero-section {
+      padding: 36px 0 20px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .hero-badge-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 600;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid var(--border-card-hover);
+    }
+
+    .hero-badge.badge-neutral {
+      background: var(--bg-card);
+      color: var(--text-muted);
+      border-color: var(--border-subtle);
+    }
+
+    .hero-title {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .hero-desc {
+      font-size: 14.5px;
+      color: var(--text-secondary);
+      max-width: 720px;
+    }
+
+    .stats-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .stat-chip {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-secondary);
+    }
+
+    .stat-chip strong {
+      color: var(--text-main);
+    }
+
+    /* Controls Bar */
+    .controls-bar {
+      margin: 16px 0 24px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .search-wrapper {
+      position: relative;
+      flex: 1;
+      min-width: 260px;
+      max-width: 480px;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 10px 40px 10px 38px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 13.5px;
+      outline: none;
+      transition: var(--transition);
+    }
+
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .search-shortcut-hint {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--bg-body);
+      border: 1px solid var(--border-subtle);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .courses-count-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    /* Course Cards Grid */
+    .courses-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 20px;
+      margin-bottom: 48px;
+    }
+
+    .course-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: var(--card-shadow);
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .course-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--border-card-hover);
+      box-shadow: var(--card-shadow-hover);
+    }
+
+    .course-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .course-badges {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .badge-code {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid var(--border-card-hover);
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+    }
+
+    .badge-units {
+      background: var(--bg-badge);
+      color: var(--text-secondary);
+    }
+
+    .badge-error {
+      background: var(--error-soft);
+      color: var(--error);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .course-idx {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .course-title {
+      font-size: 16.5px;
+      font-weight: 700;
+      line-height: 1.35;
+      color: var(--text-main);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      min-height: 44px;
+    }
+
+    .course-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .course-folder-path {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .meta-icon {
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
+
+    .course-actions {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .course-launch-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-plum) 100%);
+      color: #ffffff !important;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: var(--transition);
+      box-shadow: 0 2px 8px var(--accent-glow);
+    }
+
+    .course-launch-btn:hover {
+      background: linear-gradient(135deg, var(--accent-hover) 0%, var(--accent-plum) 100%);
+      box-shadow: 0 4px 14px var(--accent-glow);
+      transform: translateY(-1px);
+    }
+
+    .course-secondary-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .course-link-secondary {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 6px 10px;
+      background: var(--bg-card-hover);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 11.5px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: var(--transition);
+    }
+
+    .course-link-secondary:hover {
+      background: var(--bg-badge);
+      color: var(--text-main);
+      border-color: var(--accent);
+    }
+
+    .empty-state {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 60px 20px;
+      background: var(--bg-card);
+      border: 1px dashed var(--border-card);
+      border-radius: var(--radius-lg);
+      gap: 12px;
+      grid-column: 1 / -1;
+    }
+
+    .empty-state-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .empty-state-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* Footer */
+    .portal-footer {
+      margin-top: auto;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg-card);
+      padding: 24px 0;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .portal-footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .footer-links {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .footer-links a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+      transition: var(--transition);
+    }
+
+    .footer-links a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <header class="portal-nav">
+    <div class="container portal-nav-inner">
+      <div class="portal-brand">
+        <div class="brand-icon-wrapper">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+            <path d="M2 17l10 5 10-5"></path>
+            <path d="M2 12l10 5 10-5"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">University of the People</span>
+          <span class="brand-sub">Master Course Portal</span>
+        </div>
+      </div>
+      <div class="portal-nav-actions">
+        <button id="theme-toggle-btn" class="btn-icon" title="Toggle Light/Dark Theme" aria-label="Toggle theme">
+          <svg id="theme-icon-dark" class="theme-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <svg id="theme-icon-light" class="theme-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+        </button>
+        <a href="https://github.com/itsmohamedyahia/offline-course-exporter-uopeople" target="_blank" rel="noopener noreferrer" class="btn-icon" title="GitHub Repository" aria-label="GitHub Repository">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero-section">
+      <div class="hero-badge-row">
+        <span class="hero-badge">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          ${isShareable ? 'Peer-Safe Study Guides' : 'Multi-Course Offline Archive'}
+        </span>
+        <span class="hero-badge badge-neutral">Exported ${escapeHtml(exportedAt)}</span>
+      </div>
+      <h1 class="hero-title">Course Study Dashboard</h1>
+      <p class="hero-desc">
+        Welcome to your offline University of the People course library. Select any course below to launch its interactive study portal, explore weekly reading assignments, or view notes.
+      </p>
+      <div class="stats-chips">
+        <div class="stat-chip">
+          <span>📚 Enrolled Courses:</span>
+          <strong>${courses.length}</strong>
+        </div>
+        <div class="stat-chip">
+          <span>🛡️ Archive Mode:</span>
+          <strong>${isShareable ? 'Peer-Safe (No Quizzes/Forums)' : 'Full Personal (Complete Courseware)'}</strong>
+        </div>
+        <div class="stat-chip">
+          <span>📎 Attachments:</span>
+          <strong>${downloadAssets ? 'Downloaded Offline' : 'Online Links'}</strong>
+        </div>
+      </div>
+    </section>
+
+    <div class="controls-bar">
+      <div class="search-wrapper">
+        <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="search-input" class="search-input" placeholder="Filter courses by name or code... (e.g. CS 2301)" autocomplete="off" spellcheck="false">
+        <span class="search-shortcut-hint">/</span>
+      </div>
+      <span id="courses-count" class="courses-count-label">${courses.length} Courses Available</span>
+    </div>
+
+    <div class="courses-grid" id="courses-grid">
+      ${courseCardsHtml}
+      <div class="empty-state" id="empty-search-state">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--text-muted);"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <h3 class="empty-state-title">No matching courses found</h3>
+        <p class="empty-state-sub">Try searching with a different course code or keyword.</p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="portal-footer">
+    <div class="container portal-footer-inner">
+      <div>
+        <span>Generated by <strong>Offline Course Exporter for UoPeople</strong> • 100% Client-Side &amp; Zero-Telemetry</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/itsmohamedyahia/offline-course-exporter-uopeople" target="_blank" rel="noopener noreferrer">⭐ Star on GitHub</a>
+        <a href="mailto:reachmyk@gmail.com">Help &amp; Feedback</a>
+        <a href="https://www.linkedin.com/in/myahiakhidr/" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        <a href="https://ko-fi.com/myahiakhidr" target="_blank" rel="noopener noreferrer">☕ Support</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function() {
+      var themeToggleBtn = document.getElementById('theme-toggle-btn');
+      var htmlEl = document.documentElement;
+
+      function getSavedTheme() {
+        try {
+          return localStorage.getItem('uopeople_master_theme') || 'dark';
+        } catch (e) {
+          return 'dark';
+        }
+      }
+
+      function setTheme(theme) {
+        htmlEl.setAttribute('data-theme', theme);
+        try {
+          localStorage.setItem('uopeople_master_theme', theme);
+        } catch (e) {}
+      }
+
+      setTheme(getSavedTheme());
+
+      if (themeToggleBtn) {
+        themeToggleBtn.addEventListener('click', function() {
+          var current = htmlEl.getAttribute('data-theme') || 'dark';
+          setTheme(current === 'dark' ? 'light' : 'dark');
+        });
+      }
+
+      var searchInput = document.getElementById('search-input');
+      var countEl = document.getElementById('courses-count');
+      var emptyEl = document.getElementById('empty-search-state');
+      var cards = document.querySelectorAll('.course-card');
+      var totalCourses = cards.length;
+
+      function filterCourses() {
+        var query = (searchInput.value || '').trim().toLowerCase();
+        var visibleCount = 0;
+
+        cards.forEach(function(card) {
+          var title = card.getAttribute('data-title') || '';
+          var code = card.getAttribute('data-code') || '';
+          var matches = !query || title.indexOf(query) !== -1 || code.indexOf(query) !== -1;
+          if (matches) {
+            card.style.display = '';
+            visibleCount++;
+          } else {
+            card.style.display = 'none';
+          }
+        });
+
+        if (countEl) {
+          if (query) {
+            countEl.textContent = 'Showing ' + visibleCount + ' of ' + totalCourses + ' courses';
+          } else {
+            countEl.textContent = totalCourses + ' Courses Available';
+          }
+        }
+
+        if (emptyEl) {
+          emptyEl.style.display = (visibleCount === 0 && totalCourses > 0) ? 'flex' : 'none';
+        }
+      }
+
+      if (searchInput) {
+        searchInput.addEventListener('input', filterCourses);
+      }
+
+      document.addEventListener('keydown', function(e) {
+        if (e.key === '/' && document.activeElement !== searchInput) {
+          e.preventDefault();
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+          }
+        } else if (e.key === 'Escape' && document.activeElement === searchInput) {
+          searchInput.value = '';
+          filterCourses();
+          searchInput.blur();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>`;
+
+    return htmlContent;
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.HTMLBuilder = HTMLBuilder;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.HTMLBuilder = HTMLBuilder;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = HTMLBuilder;
+}
+
