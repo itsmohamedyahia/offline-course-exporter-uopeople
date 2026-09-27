@@ -81,16 +81,36 @@ const D2LApi = {
       });
     };
 
-    // 1. Query Valence LP myenrollments API
-    const lpVersions = ['1.30', '1.45', '1.26', '1.0'];
-    for (const ver of lpVersions) {
+    // 1. Query Valence LP myenrollments API with active status and version prioritization
+    const endpoints = [
+      '/d2l/api/lp/1.30/enrollments/myenrollments/?canAccess=true&orgUnitTypeId=3&isActive=true',
+      '/d2l/api/lp/1.45/enrollments/myenrollments/?canAccess=true&orgUnitTypeId=3&isActive=true',
+      '/d2l/api/lp/1.45/enrollments/myenrollments/?canAccess=true&orgUnitTypeId=3',
+      '/d2l/api/lp/1.30/enrollments/myenrollments/?canAccess=true&orgUnitTypeId=3',
+      '/d2l/api/lp/1.26/enrollments/myenrollments/?canAccess=true&orgUnitTypeId=3',
+      '/d2l/api/lp/1.0/enrollments/myenrollments/?canAccess=true&orgUnitTypeId=3'
+    ];
+
+    for (const endpointUrl of endpoints) {
       try {
-        const url = `/d2l/api/lp/${ver}/enrollments/myenrollments/?canAccess=true&orgUnitTypeId=3`;
-        const resp = await fetch(url, {
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
-          credentials: 'include'
-        });
-        if (resp.ok) {
+        let bookmark = null;
+        let hasMore = true;
+        let pageCount = 0;
+
+        while (hasMore && pageCount < 20) {
+          pageCount++;
+          const sep = endpointUrl.includes('?') ? '&' : '?';
+          const fetchUrl = bookmark
+            ? `${endpointUrl}${sep}bookmark=${encodeURIComponent(bookmark)}`
+            : endpointUrl;
+
+          const resp = await fetch(fetchUrl, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'include'
+          });
+
+          if (!resp.ok) break;
+
           const data = await resp.json();
           const items = Array.isArray(data) ? data : (data.Items || []);
           for (const item of items) {
@@ -100,23 +120,44 @@ const D2LApi = {
               addCourse(ou.Id, ou.Name, ou.Code);
             }
           }
-          if (courses.length > 0) {
-            console.log(`[Course Exporter] Discovered ${courses.length} enrolled courses via Valence LP v${ver}`);
-            return courses;
+
+          if (data && data.PagingInfo && data.PagingInfo.HasMoreItems && data.PagingInfo.Bookmark) {
+            bookmark = data.PagingInfo.Bookmark;
+            hasMore = true;
+          } else {
+            hasMore = false;
           }
         }
+
+        if (courses.length > 0) {
+          console.log(`[Course Exporter] Discovered ${courses.length} enrolled courses via Valence LP: ${endpointUrl}`);
+          return courses;
+        }
       } catch (e) {
-        console.warn(`Valence myenrollments API v${ver} attempt failed:`, e);
+        console.warn(`Valence myenrollments API attempt failed for ${endpointUrl}:`, e);
       }
     }
 
     // 2. Secondary API attempt: general myenrollments without orgUnitTypeId query filter
     try {
-      const resp = await fetch('/d2l/api/lp/1.30/enrollments/myenrollments/?canAccess=true', {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        credentials: 'include'
-      });
-      if (resp.ok) {
+      let bookmark = null;
+      let hasMore = true;
+      let pageCount = 0;
+      const baseSecUrl = '/d2l/api/lp/1.30/enrollments/myenrollments/?canAccess=true';
+
+      while (hasMore && pageCount < 20) {
+        pageCount++;
+        const fetchUrl = bookmark
+          ? `${baseSecUrl}&bookmark=${encodeURIComponent(bookmark)}`
+          : baseSecUrl;
+
+        const resp = await fetch(fetchUrl, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          credentials: 'include'
+        });
+
+        if (!resp.ok) break;
+
         const data = await resp.json();
         const items = Array.isArray(data) ? data : (data.Items || []);
         for (const item of items) {
@@ -126,9 +167,17 @@ const D2LApi = {
             addCourse(ou.Id, ou.Name, ou.Code);
           }
         }
-        if (courses.length > 0) {
-          return courses;
+
+        if (data && data.PagingInfo && data.PagingInfo.HasMoreItems && data.PagingInfo.Bookmark) {
+          bookmark = data.PagingInfo.Bookmark;
+          hasMore = true;
+        } else {
+          hasMore = false;
         }
+      }
+
+      if (courses.length > 0) {
+        return courses;
       }
     } catch (e) {}
 
@@ -136,22 +185,32 @@ const D2LApi = {
     if (typeof document !== 'undefined') {
       try {
         const courseCards = document.querySelectorAll(
-          'd2l-enrollment-card, .d2l-course-tile, .d2l-card, [data-org-unit-id], a[href*="/d2l/home/"]'
+          'd2l-enrollment-card, .d2l-course-tile, .d2l-card, [data-org-unit-id], a[href*="/d2l/home/"], a[href*="ou="]'
         );
         courseCards.forEach(card => {
           let ouId = (typeof card.getAttribute === 'function' ? (card.getAttribute('data-org-unit-id') || card.getAttribute('org-unit-id')) : null) || card['data-org-unit-id'];
           let courseName = '';
 
           if (!ouId && card.href) {
-            const m = card.href.match(/\/d2l\/home\/(\d+)/i);
-            if (m && m[1] !== '6606') ouId = m[1];
+            const mHome = card.href.match(/\/d2l\/home\/(\d+)/i);
+            const mOu = card.href.match(/[?&]ou=(\d+)/i);
+            if (mHome && mHome[1] !== '6606') {
+              ouId = mHome[1];
+            } else if (mOu && mOu[1] !== '6606') {
+              ouId = mOu[1];
+            }
           }
 
           if (!ouId && typeof card.querySelector === 'function') {
-            const anchor = card.querySelector('a[href*="/d2l/home/"], a[href*="/d2l/le/content/"]');
+            const anchor = card.querySelector('a[href*="/d2l/home/"], a[href*="/d2l/le/content/"], a[href*="ou="]');
             if (anchor && anchor.href) {
-              const m = anchor.href.match(/\/d2l\/(?:home|le\/content)\/(\d+)/i);
-              if (m && m[1] !== '6606') ouId = m[1];
+              const mHome = anchor.href.match(/\/d2l\/(?:home|le\/content)\/(\d+)/i);
+              const mOu = anchor.href.match(/[?&]ou=(\d+)/i);
+              if (mHome && mHome[1] !== '6606') {
+                ouId = mHome[1];
+              } else if (mOu && mOu[1] !== '6606') {
+                ouId = mOu[1];
+              }
             }
           }
 
@@ -161,6 +220,8 @@ const D2LApi = {
               courseName = (typeof titleEl.getAttribute === 'function' ? titleEl.getAttribute('title') : null) || titleEl.title || titleEl.innerText || titleEl.textContent || '';
             } else if (card.innerText) {
               courseName = card.innerText.split('\n')[0];
+            } else if (card.textContent) {
+              courseName = card.textContent.split('\n')[0];
             }
             addCourse(ouId, courseName);
           }
