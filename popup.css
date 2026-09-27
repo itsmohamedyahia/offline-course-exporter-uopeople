@@ -156,6 +156,66 @@ body {
 }
 
 /* ==========================================================================
+   Target Mode Switcher (Single Course vs All Courses)
+   ========================================================================== */
+.target-switcher {
+  display: flex;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 3px;
+}
+
+.target-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+.target-pill svg {
+  color: var(--text-muted);
+  transition: color 0.18s ease;
+  flex-shrink: 0;
+}
+
+.target-pill:hover:not(:disabled) {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.target-pill.active {
+  background: linear-gradient(135deg, rgba(139, 60, 100, 0.35), rgba(231, 79, 115, 0.2));
+  border-color: rgba(231, 79, 115, 0.4);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.target-pill.active svg {
+  color: var(--accent-rose);
+}
+
+.target-pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(40%);
+}
+
+/* ==========================================================================
    Course Detector Card
    ========================================================================== */
 .course-card {
@@ -167,6 +227,7 @@ body {
   flex-direction: column;
   gap: 6px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  animation: fadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .course-card-header {
@@ -262,6 +323,267 @@ body {
   color: var(--text-secondary);
   line-height: 1.3;
   margin-top: 2px;
+}
+
+/* ==========================================================================
+   Batch Courses Checklist Card (All Courses Mode)
+   ========================================================================== */
+.batch-courses-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  animation: fadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.batch-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.batch-header-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.batch-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.batch-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+}
+
+.batch-count-badge {
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(231, 79, 115, 0.12);
+  color: var(--accent-rose-light);
+  border: 1px solid rgba(231, 79, 115, 0.25);
+}
+
+.batch-select-all-btn {
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-rose-light);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  transition: all 0.15s ease;
+}
+
+.batch-select-all-btn:hover {
+  background: rgba(231, 79, 115, 0.15);
+  color: #ffffff;
+}
+
+.batch-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 3px 7px;
+  transition: border-color 0.15s ease;
+}
+
+.batch-search-wrap:focus-within {
+  border-color: var(--border-card-hover);
+}
+
+.batch-search-wrap svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.batch-search-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--text-main);
+  outline: none;
+}
+
+.batch-search-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+/* Scrollable course checklist with custom scrollbar */
+.batch-courses-list {
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 2px;
+}
+
+.batch-courses-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.batch-courses-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+}
+
+.batch-courses-list::-webkit-scrollbar-thumb {
+  background: rgba(231, 79, 115, 0.3);
+  border-radius: 4px;
+}
+
+.batch-courses-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(231, 79, 115, 0.5);
+}
+
+/* Individual Course Checklist Item */
+.batch-course-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-card-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.batch-course-item:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-card-hover);
+}
+
+.batch-course-item.selected {
+  border-color: rgba(231, 79, 115, 0.35);
+  background: rgba(139, 60, 100, 0.12);
+}
+
+/* Custom Checkbox */
+.batch-course-item input[type="checkbox"],
+.batch-course-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  background: var(--bg-input);
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  display: grid;
+  place-content: center;
+  transition: all 0.15s ease;
+  margin: 0;
+}
+
+.batch-course-item input[type="checkbox"]::before,
+.batch-course-checkbox::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  transform: scale(0);
+  transition: 120ms transform ease-in-out;
+  box-shadow: inset 1em 1em var(--accent-rose);
+  transform-origin: center;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+
+.batch-course-item input[type="checkbox"]:checked,
+.batch-course-checkbox:checked {
+  border-color: var(--accent-rose);
+  background: rgba(231, 79, 115, 0.15);
+}
+
+.batch-course-item input[type="checkbox"]:checked::before,
+.batch-course-checkbox:checked::before {
+  transform: scale(1);
+}
+
+.batch-course-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.batch-course-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-rose-light);
+  line-height: 1.2;
+}
+
+.batch-course-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.batch-loading-state,
+.batch-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.batch-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(231, 79, 115, 0.2);
+  border-top-color: var(--accent-rose);
+  border-radius: 50%;
+  animation: batch-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes batch-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ==========================================================================

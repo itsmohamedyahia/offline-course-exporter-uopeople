@@ -46,7 +46,26 @@
     </header>
 
     <main class="app-body">
-      <!-- Course Detector Card -->
+      <!-- Target Mode Switcher (Single Course vs All Courses) -->
+      <div class="target-switcher" id="target-switcher">
+        <button type="button" class="target-pill active" id="btn-target-single" title="Export currently opened course">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+            <path d="M6 6h10"></path>
+            <path d="M6 10h10"></path>
+          </svg>
+          <span id="btn-target-single-label">This Course</span>
+        </button>
+        <button type="button" class="target-pill" id="btn-target-batch" title="Export all enrolled courses in batch">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+          </svg>
+          <span id="btn-target-batch-label">All Courses (0)</span>
+        </button>
+      </div>
+
+      <!-- Course Detector Card (Single Course Mode) -->
       <div class="course-card" id="course-card">
         <div class="course-card-header">
           <div class="course-icon-badge">
@@ -63,6 +82,34 @@
         <div class="course-details">
           <h2 id="course-title">Checking active Brightspace tab...</h2>
           <p class="course-meta" id="course-meta">Open any UoPeople course page</p>
+        </div>
+      </div>
+
+      <!-- Batch Courses Checklist Card (All Courses Mode) -->
+      <div class="batch-courses-card hidden" id="batch-courses-container">
+        <div class="batch-header">
+          <div class="batch-header-title-row">
+            <div class="batch-header-left">
+              <span class="batch-title">Enrolled Courses</span>
+              <span class="batch-count-badge" id="batch-course-count">0</span>
+            </div>
+            <button type="button" class="batch-select-all-btn" id="batch-select-all-btn" title="Toggle Select All">
+              Select All
+            </button>
+          </div>
+          <div class="batch-search-wrap">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="batch-search-input" class="batch-search-input" placeholder="Filter courses..." aria-label="Filter enrolled courses">
+          </div>
+        </div>
+        <div class="batch-courses-list" id="batch-courses-list" tabindex="0" role="group" aria-label="Enrolled Courses">
+          <div class="batch-loading-state" id="batch-loading-state">
+            <span class="batch-spinner"></span>
+            <span>Detecting enrolled courses...</span>
+          </div>
         </div>
       </div>
 
@@ -148,28 +195,28 @@
             <polyline points="7 10 12 15 17 10"/>
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
-          <span>Export Full Package (HTML + MD)</span>
+          <span id="btn-export-combined-label">Export Full Package (HTML + MD)</span>
         </button>
         <button class="btn btn-secondary" id="btn-export" disabled>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
             <line x1="2" y1="12" x2="22" y2="12"></line>
             <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
           </svg>
-          <span>Export HTML Website (.zip)</span>
+          <span id="btn-export-label">Export HTML Website (.zip)</span>
         </button>
         <button class="btn btn-secondary" id="btn-export-markdown" disabled>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
             <line x1="16" y1="13" x2="8" y2="13"></line>
             <line x1="16" y1="17" x2="8" y2="17"></line>
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
-          <span>Export Markdown Notes (.zip)</span>
+          <span id="btn-export-markdown-label">Export Markdown Notes (.zip)</span>
         </button>
         <button class="btn btn-secondary" id="btn-mark-completed" disabled>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
             <polyline points="22 4 12 14.01 9 11.01"></polyline>
           </svg>
