@@ -48,6 +48,7 @@ async function initPopup(rootDoc, chromeApi) {
   const selectedCourseIds = new Set();
   let activeOrgUnitId = null;
   let isSingleCourseDetected = false;
+  let isExporting = false;
   let tab = null;
 
   // DOM element references
@@ -206,6 +207,7 @@ async function initPopup(rootDoc, chromeApi) {
 
   // Export buttons state helpers
   function updateSingleExportButtonStates() {
+    if (isExporting) return;
     const canExport = !!activeOrgUnitId;
     if (btnExportCombined) btnExportCombined.disabled = !canExport;
     if (btnExport) btnExport.disabled = !canExport;
@@ -214,6 +216,7 @@ async function initPopup(rootDoc, chromeApi) {
   }
 
   function updateBatchExportButtonStates() {
+    if (isExporting) return;
     const canExport = selectedCourseIds.size > 0;
     if (btnExportCombined) btnExportCombined.disabled = !canExport;
     if (btnExport) btnExport.disabled = !canExport;
@@ -229,6 +232,7 @@ async function initPopup(rootDoc, chromeApi) {
   }
 
   function enableExportButtons() {
+    if (isExporting) return;
     if (currentTargetMode === 'single') {
       updateSingleExportButtonStates();
     } else {
@@ -238,6 +242,7 @@ async function initPopup(rootDoc, chromeApi) {
 
   // Switch between 'single' (This Course) and 'batch' (All Courses) modes
   function switchTargetMode(mode) {
+    if (isExporting) return;
     currentTargetMode = mode;
 
     if (mode === 'single') {
@@ -269,14 +274,14 @@ async function initPopup(rootDoc, chromeApi) {
 
   if (btnTargetSingle) {
     btnTargetSingle.addEventListener('click', () => {
-      if (btnTargetSingle.disabled) return;
+      if (isExporting || btnTargetSingle.disabled) return;
       switchTargetMode('single');
     });
   }
 
   if (btnTargetBatch) {
     btnTargetBatch.addEventListener('click', () => {
-      if (btnTargetBatch.disabled) return;
+      if (isExporting || btnTargetBatch.disabled) return;
       switchTargetMode('batch');
     });
   }
@@ -327,7 +332,7 @@ async function initPopup(rootDoc, chromeApi) {
       if (discoveredCourses.length === 0) {
         renderBatchEmptyState('No enrolled courses found.');
       } else {
-        renderBatchEmptyState(`No courses matching "${escapeHtml(filterQuery)}"`);
+        renderBatchEmptyState(`No courses matching "${filterQuery}"`);
       }
       updateSelectAllButtonText();
       return;
@@ -353,6 +358,10 @@ async function initPopup(rootDoc, chromeApi) {
 
       checkbox.addEventListener('change', (e) => {
         if (e && e.stopPropagation) e.stopPropagation();
+        if (isExporting) {
+          checkbox.checked = !checkbox.checked;
+          return;
+        }
         if (checkbox.checked) {
           selectedCourseIds.add(ouId);
           label.classList.add('selected');
@@ -392,7 +401,7 @@ async function initPopup(rootDoc, chromeApi) {
   // Toggle Select All / Deselect All
   if (batchSelectAllBtn) {
     batchSelectAllBtn.addEventListener('click', () => {
-      if (discoveredCourses.length === 0) return;
+      if (isExporting || discoveredCourses.length === 0) return;
       if (selectedCourseIds.size === discoveredCourses.length) {
         selectedCourseIds.clear();
       } else {
@@ -415,6 +424,8 @@ async function initPopup(rootDoc, chromeApi) {
 
   // Course status response handler (Single course)
   function handleCourseStatusResponse(response) {
+    if (isExporting) return;
+
     if (!response || !response.detected) {
       isSingleCourseDetected = false;
       activeOrgUnitId = null;
@@ -485,10 +496,10 @@ async function initPopup(rootDoc, chromeApi) {
 
       if (batchCourseCount) batchCourseCount.textContent = String(discoveredCourses.length);
       if (btnTargetBatchLabel) btnTargetBatchLabel.textContent = `All Courses (${discoveredCourses.length})`;
-      if (btnTargetBatch) btnTargetBatch.disabled = false;
+      if (btnTargetBatch && !isExporting) btnTargetBatch.disabled = false;
 
       renderBatchCoursesList();
-      if (currentTargetMode === 'batch') {
+      if (currentTargetMode === 'batch' && !isExporting) {
         updateBatchExportButtonStates();
       }
     } else {
@@ -499,7 +510,7 @@ async function initPopup(rootDoc, chromeApi) {
 
       const errMsg = (response && response.error) ? `Error: ${response.error}` : 'No enrolled courses found.';
       renderBatchEmptyState(errMsg);
-      if (currentTargetMode === 'batch') {
+      if (currentTargetMode === 'batch' && !isExporting) {
         updateBatchExportButtonStates();
       }
     }
@@ -561,10 +572,13 @@ async function initPopup(rootDoc, chromeApi) {
 
   // Single Course Export
   function startExport(exportFormat) {
-    if (!activeOrgUnitId || !tab || !tab.id) return;
+    if (isExporting || !activeOrgUnitId || !tab || !tab.id) return;
 
+    isExporting = true;
     const exportScope = getSelectedScope();
     disableExportButtons();
+    if (btnTargetSingle) btnTargetSingle.disabled = true;
+    if (btnTargetBatch) btnTargetBatch.disabled = true;
     if (progressSection) progressSection.classList.remove('hidden');
     if (resultMessage) resultMessage.classList.add('hidden');
 
@@ -585,6 +599,9 @@ async function initPopup(rootDoc, chromeApi) {
       if (lastError || !response || !response.success) {
         const err = (response && response.error) || (lastError && lastError.message) || 'Export failed.';
         updateProgress(0, `Error: ${err}`);
+        isExporting = false;
+        if (btnTargetSingle) btnTargetSingle.disabled = !isSingleCourseDetected;
+        if (btnTargetBatch) btnTargetBatch.disabled = false;
         enableExportButtons();
         return;
       }
@@ -593,6 +610,9 @@ async function initPopup(rootDoc, chromeApi) {
       setTimeout(() => {
         if (progressSection) progressSection.classList.add('hidden');
         if (resultMessage) resultMessage.classList.remove('hidden');
+        isExporting = false;
+        if (btnTargetSingle) btnTargetSingle.disabled = !isSingleCourseDetected;
+        if (btnTargetBatch) btnTargetBatch.disabled = false;
         enableExportButtons();
       }, 1000);
     });
@@ -600,7 +620,7 @@ async function initPopup(rootDoc, chromeApi) {
 
   // Multi-Course Batch Export
   function startBatchExport(exportFormat) {
-    if (!tab || !tab.id) return;
+    if (isExporting || !tab || !tab.id) return;
 
     if (selectedCourseIds.size === 0) {
       if (progressSection) progressSection.classList.remove('hidden');
@@ -615,8 +635,11 @@ async function initPopup(rootDoc, chromeApi) {
       return;
     }
 
+    isExporting = true;
     const exportScope = getSelectedScope();
     disableExportButtons();
+    if (btnTargetSingle) btnTargetSingle.disabled = true;
+    if (btnTargetBatch) btnTargetBatch.disabled = true;
     if (progressSection) progressSection.classList.remove('hidden');
     if (resultMessage) resultMessage.classList.add('hidden');
 
@@ -637,6 +660,9 @@ async function initPopup(rootDoc, chromeApi) {
       if (lastError || !response || !response.success) {
         const err = (response && response.error) || (lastError && lastError.message) || 'Batch export failed.';
         updateProgress(0, `Error: ${err}`);
+        isExporting = false;
+        if (btnTargetSingle) btnTargetSingle.disabled = !isSingleCourseDetected;
+        if (btnTargetBatch) btnTargetBatch.disabled = false;
         enableExportButtons();
         return;
       }
@@ -646,6 +672,9 @@ async function initPopup(rootDoc, chromeApi) {
       setTimeout(() => {
         if (progressSection) progressSection.classList.add('hidden');
         if (resultMessage) resultMessage.classList.remove('hidden');
+        isExporting = false;
+        if (btnTargetSingle) btnTargetSingle.disabled = !isSingleCourseDetected;
+        if (btnTargetBatch) btnTargetBatch.disabled = false;
         enableExportButtons();
       }, 1000);
     });
@@ -653,6 +682,7 @@ async function initPopup(rootDoc, chromeApi) {
 
   // Unified export action button click router
   function handleExportClick(exportFormat) {
+    if (isExporting) return;
     if (currentTargetMode === 'batch') {
       startBatchExport(exportFormat);
     } else {
@@ -673,9 +703,12 @@ async function initPopup(rootDoc, chromeApi) {
   // Single Course Mark Completed action
   if (btnMarkCompleted) {
     btnMarkCompleted.addEventListener('click', () => {
-      if (!activeOrgUnitId || !tab || !tab.id) return;
+      if (isExporting || !activeOrgUnitId || !tab || !tab.id) return;
 
+      isExporting = true;
       disableExportButtons();
+      if (btnTargetSingle) btnTargetSingle.disabled = true;
+      if (btnTargetBatch) btnTargetBatch.disabled = true;
       if (progressSection) progressSection.classList.remove('hidden');
       if (resultMessage) resultMessage.classList.add('hidden');
 
@@ -686,6 +719,9 @@ async function initPopup(rootDoc, chromeApi) {
         orgUnitId: activeOrgUnitId,
         showToast: true
       }, (response) => {
+        isExporting = false;
+        if (btnTargetSingle) btnTargetSingle.disabled = !isSingleCourseDetected;
+        if (btnTargetBatch) btnTargetBatch.disabled = false;
         enableExportButtons();
 
         const lastError = chromeRuntime.runtime && chromeRuntime.runtime.lastError;
@@ -783,7 +819,7 @@ async function initPopup(rootDoc, chromeApi) {
     if (btnTargetBatch) btnTargetBatch.disabled = true;
     disableExportButtons();
     return {
-      getState: () => ({ currentTargetMode, discoveredCourses, selectedCourseIds, activeOrgUnitId }),
+      getState: () => ({ currentTargetMode, discoveredCourses, selectedCourseIds, activeOrgUnitId, isExporting }),
       switchTargetMode,
       cleanCourseName,
       escapeHtml
@@ -793,7 +829,7 @@ async function initPopup(rootDoc, chromeApi) {
   queryCourseStatusAndEnrolled();
 
   return {
-    getState: () => ({ currentTargetMode, discoveredCourses, selectedCourseIds, activeOrgUnitId, isSingleCourseDetected }),
+    getState: () => ({ currentTargetMode, discoveredCourses, selectedCourseIds, activeOrgUnitId, isSingleCourseDetected, isExporting }),
     switchTargetMode,
     renderBatchCoursesList,
     handleCourseStatusResponse,

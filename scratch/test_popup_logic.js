@@ -136,7 +136,7 @@ function createMockChrome() {
         cb([{ id: 101, url: 'https://learn.uopeople.edu/d2l/home/12345' }]);
       },
       sendMessage: (tabId, msg, cb) => {
-        sentMessages.push({ tabId, ...msg });
+        sentMessages.push({ tabId, ...msg, _callback: cb });
       }
     },
     storage: {
@@ -260,6 +260,34 @@ async function runTests() {
   assert.strictEqual(elements['progress-percent'].textContent, '45%', 'Progress percent must show 45%');
   assert.strictEqual(elements['progress-detail'].textContent, '[2/3] Exporting CS 2301 Operating Systems...', 'Progress detail must match status');
   console.log('✓ Step 10: BATCH_EXPORT_PROGRESS updates progress fill, percent, and detail');
+
+  // Test 10: Review Finding 1 - isExporting Active Export Guard
+  assert.strictEqual(controller.getState().isExporting, true, 'isExporting must be true while export is running');
+  assert(elements['btn-target-single'].disabled, 'Single course pill must be disabled mid-export');
+  assert(elements['btn-target-batch'].disabled, 'Batch course pill must be disabled mid-export');
+
+  // Attempt mode switch mid-export
+  controller.switchTargetMode('single');
+  assert.strictEqual(controller.getState().currentTargetMode, 'batch', 'Mode switch must be blocked while isExporting is true');
+
+  // Resolve active export
+  if (batchExportMsg._callback) {
+    batchExportMsg._callback({ success: true, exportedCount: 3 });
+  }
+
+  // Simulate completion timeout resolution
+  await new Promise(r => setTimeout(r, 1100));
+  assert.strictEqual(controller.getState().isExporting, false, 'isExporting must reset to false after completion');
+  assert(!elements['btn-target-batch'].disabled, 'Batch course pill must be re-enabled after export');
+  console.log('✓ Step 11: isExporting guards mode switching and buttons mid-export');
+
+  // Test 11: Review Finding 2 - No Double Escaping in Filter Query Empty State
+  controller.renderBatchCoursesList('CS & Math <test>');
+  const emptyStateHtml = elements['batch-courses-list'].innerHTML;
+  assert(emptyStateHtml.includes('No courses matching &quot;CS &amp; Math &lt;test&gt;&quot;'), 'Empty state must properly escape filterQuery once');
+  assert(!emptyStateHtml.includes('&amp;quot;'), 'Empty state must NOT double escape quotes (&amp;quot;)');
+  assert(!emptyStateHtml.includes('&amp;amp;'), 'Empty state must NOT double escape ampersands (&amp;amp;)');
+  console.log('✓ Step 12: Empty state filter query avoids double-escaping');
 
   console.log('\n ALL POPUP LOGIC TESTS PASSED!');
 }
