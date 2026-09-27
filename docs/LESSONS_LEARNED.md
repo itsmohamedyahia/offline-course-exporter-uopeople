@@ -143,3 +143,44 @@ This document records the historical challenges, edge cases, root cause analyses
   - Added activity-specific query fallback `/d2l/api/le/{version}/{orgUnitId}/rubrics?objectType=Dropbox&objectId={folderId}` and student LMS view scraping `/d2l/lms/rubrics/rubric_view.d2l?ou={orgUnitId}&rubricId={rubricId}`.
   - Updated `buildRubricHtml()` to support Analytic and Holistic rubrics, fallback to `group.Levels`, render responsive matrix tables with criteria weights, and convert cleanly into GitHub-Flavored Markdown tables.
 
+---
+
+### 15. 🔒 Export Concurrency Guard & Mutex Protection for Long-Running Operations
+* **Symptoms:** Rapidly clicking the export button or switching target modes while a multi-course batch export was running spawned duplicate extraction loops, causing out-of-order progress updates and corrupted ZIP packages.
+* **Root Cause:** `popup.js` and `content.js` lacked a unified concurrency guard across asynchronous message dispatches.
+* **Solution:**
+  - Added a global `isExportActive` boolean mutex in `content.js` that immediately rejects any incoming `START_EXPORT` or `START_BATCH_EXPORT` requests if an operation is currently active.
+  - In `popup.js`, disabled the export button, target mode switcher pills, format radios, and course selection checkboxes while `isExporting` is active, resetting only after completion or failure.
+
+---
+
+### 16. 🌐 Isomorphic DOM Safety for Notification Toasts in Headless & Scripting Contexts
+* **Symptoms:** Automated pipeline tests running under Node.js CLI test runners threw `ReferenceError: document is not defined` when triggering batch completion toasts.
+* **Root Cause:** In-page notification helpers (`showCompletionToast`, `hideCompletionToast`) accessed `document.createElement`, `document.getElementById`, and `document.body` unconditionally.
+* **Solution:**
+  - Guarded all DOM manipulation routines with `if (typeof document === 'undefined') return;` at entry.
+  - Allowed tests, headless scripts, and CI runners to execute the full batch pipeline logic cleanly without mocking DOM dependencies.
+
+---
+
+### 17. 🛡️ Per-Course Error Isolation in Multi-Course Batch Pipeline
+* **Symptoms:** In a multi-course batch export (e.g. 4 courses), if an archived, restricted, or empty course failed with a network timeout or 403 error during Table of Contents scraping, the entire batch threw an uncaught error and aborted, leaving the student with no exported files.
+* **Root Cause:** The sequential batch loop lacked per-course error containment, causing any rejection to terminate the master promise chain.
+* **Solution:**
+  - Wrapped each individual course extraction in `runBatchExportPipeline()` inside an isolated `try / catch` block.
+  - If a course fails, the error is caught and logged, the course is marked with `{ error: true, failureReason }` in the batch summary, and the pipeline immediately advances to the next course.
+  - The master portal launcher flags failed courses with a warning badge while providing working launch links for all successfully extracted courses.
+
+---
+
+### 18. 🔍 Valence Enrollment Endpoint Filtering & DOM Scraper Web Component Fallback
+* **Symptoms:** Querying `/d2l/api/lp/1.30/enrollments/myenrollments/` without parameters returned institutional parent shells (such as OrgUnit `6606` "University of the People") and inactive historical courses, while student accounts with restricted Valence roles received empty arrays.
+* **Root Cause:**
+  - Brightspace enrollments include administrative organizations, departments, and semesters unless explicitly filtered by `orgUnitTypeId=3` (Course Offering).
+  - Many institutions restrict student Valence LP enrollment visibility, returning an empty list via API despite courses appearing on the student's web dashboard.
+* **Solution:**
+  - Enhanced API queries with `?canAccess=true&orgUnitTypeId=3&isActive=true` and bookmark-based cursor pagination (`PagingInfo.Bookmark`).
+  - Added explicit exclusion filters for `orgUnitId === '6606'` and `item.Access.CanAccess === false`.
+  - Implemented multi-tier DOM fallback scrapers that extract course cards directly from Brightspace Web Components (`d2l-enrollment-card`, `.d2l-card`), `/d2l/home/` URLs, and QuickLinks `?ou=` query parameters.
+
+
