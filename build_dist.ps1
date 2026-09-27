@@ -80,7 +80,8 @@ function Create-BrowserZip {
     }
 
     $targetManifestPath = Join-Path $tempDir "manifest.json"
-    $targetManifest | ConvertTo-Json -Depth 10 | Set-Content -Path $targetManifestPath -Encoding UTF8
+    [System.IO.File]::WriteAllText($targetManifestPath, ($targetManifest | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))
+
 
     # Create POSIX-compliant zip archive with forward slashes
     $zipOutput = Join-Path $distDir $ZipName
