@@ -2109,7 +2109,16 @@ const HTMLBuilder = {
         .replace(/_+/g, '_')
         .replace(/\\s+/g, ' ')
         .replace(/^_+|_+$/g, '');
-      return \`\${String(index + 1).padStart(2, '0')}_\${cleanTitle || 'Unit'}\`;
+      const lower = cleanTitle.toLowerCase();
+      if (lower.includes('course introduction')) {
+        return \`00_\${cleanTitle || 'Course Introduction'}\`;
+      }
+      const m = lower.match(/(?:unit|week)\\s*(\\d+)/i);
+      if (m) {
+        const unitNum = parseInt(m[1], 10);
+        return \`\${String(unitNum).padStart(2, '0')}_\${cleanTitle || 'Unit'}\`;
+      }
+      return \`\${String((typeof index === 'number' ? index + 1 : 1)).padStart(2, '0')}_\${cleanTitle || 'Unit'}\`;
     }
 
     let activeUnitIndex = 0;

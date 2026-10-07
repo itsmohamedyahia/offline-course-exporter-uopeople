@@ -15,6 +15,28 @@ const MarkdownBuilder = {
     return clean || 'Unit';
   },
 
+  getUnitFolderName(unit, index) {
+    const rawTitle = typeof unit === 'string' ? unit : (unit && unit.title ? unit.title : '');
+    const cleanTitle = (rawTitle || '').replace(/[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, ' ').trim();
+    const lower = cleanTitle.toLowerCase();
+
+    // 00_ for Course Introduction
+    if (lower.includes('course introduction')) {
+      return `00_${this.sanitizeFolderName(cleanTitle)}`;
+    }
+
+    // Match explicit "Unit X" or "Week X"
+    const m = lower.match(/(?:unit|week)\s*(\d+)/i);
+    if (m) {
+      const unitNum = parseInt(m[1], 10);
+      return `${String(unitNum).padStart(2, '0')}_${this.sanitizeFolderName(cleanTitle)}`;
+    }
+
+    // Fallback: 1-based index if index is provided
+    const fallbackNum = (typeof index === 'number') ? (index + 1) : 1;
+    return `${String(fallbackNum).padStart(2, '0')}_${this.sanitizeFolderName(cleanTitle)}`;
+  },
+
   cleanContentHtml(html, title = '') {
     if (!html) return '';
     let clean = html;
@@ -640,7 +662,7 @@ const MarkdownBuilder = {
     // 3. Loop through units to write individual files and append to Master Notes
     units.forEach((unit, unitIdx) => {
       const cleanTitle = (unit.title || '').replace(/[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, ' ').trim();
-      const folderName = `${String(unitIdx + 1).padStart(2, '0')}_${this.sanitizeFolderName(cleanTitle)}`;
+      const folderName = this.getUnitFolderName(unit, unitIdx);
       readmeContent += `- [${cleanTitle}](./${encodeURIComponent(folderName)}/01_Overview.md)\n`;
 
       // Collect IDs of topics assigned to specialized sections to prevent duplicates in Overview

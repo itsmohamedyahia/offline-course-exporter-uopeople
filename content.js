@@ -470,7 +470,7 @@
 
         for (let unitIdx = 0; unitIdx < units.length; unitIdx++) {
           const unit = units[unitIdx];
-          const unitFolderName = `${String(unitIdx + 1).padStart(2, '0')}_${MarkdownBuilder.sanitizeFolderName(unit.title)}`;
+          const unitFolderName = MarkdownBuilder.getUnitFolderName(unit, unitIdx);
 
           if (unit.attachments && unit.attachments.length > 0) {
             for (const att of unit.attachments) {
@@ -549,7 +549,7 @@
 
         for (let unitIdx = 0; unitIdx < units.length; unitIdx++) {
           const unit = units[unitIdx];
-          const unitFolderName = `${String(unitIdx + 1).padStart(2, '0')}_${MarkdownBuilder.sanitizeFolderName(unit.title)}`;
+          const unitFolderName = MarkdownBuilder.getUnitFolderName(unit, unitIdx);
 
           if (unit.attachments && unit.attachments.length > 0) {
             for (const att of unit.attachments) {
